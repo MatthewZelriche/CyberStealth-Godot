@@ -25,3 +25,7 @@ os.chdir("../../qodot-plugin/libqodot")
 subprocess.run(["scons", "p=windows", "target={}".format(target)])
 shutil.copyfile("libmap/build/libmap.dll", "../../bin/{}/libmap.dll".format(target))
 shutil.copyfile("build/libqodot.dll", "../../bin/{}/libqodot.dll".format(target))
+
+# Copy over trenchbroom files
+os.chdir("../../Game/")
+shutil.copytree("trenchbroom_data/", "../bin/{}/trenchbroom_data/".format(target))
