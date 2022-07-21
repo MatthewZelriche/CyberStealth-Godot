@@ -1,0 +1,16 @@
+// Game: CyberStealth-dev
+// Format: Standard
+// entity 0
+{
+"classname" "worldspawn"
+"_tb_textures" "textures/debug"
+// brush 0
+{
+( -64 64 16 ) ( -64 -336 16 ) ( -64 -336 -16 ) debug/TestMat1 0 0 0 1 1
+( -64 -336 16 ) ( 64 -336 16 ) ( 64 -336 -16 ) debug/TestMat1 0 0 0 1 1
+( 64 -336 -16 ) ( 64 64 -16 ) ( -64 64 -16 ) debug/TestMat1 0 0 0 1 1
+( -64 64 16 ) ( 64 64 16 ) ( 64 -336 16 ) debug/TestMat1 0 0 0 1 1
+( 64 64 -16 ) ( 64 64 16 ) ( -64 64 16 ) debug/TestMat1 0 0 0 1 1
+( 64 -336 16 ) ( 64 64 16 ) ( 64 64 -16 ) debug/TestMat1 0 0 0 1 1
+}
+}
