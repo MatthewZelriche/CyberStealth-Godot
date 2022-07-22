@@ -210,6 +210,10 @@ config/name="Game"
 run/main_scene="res://addons/qodot/example_scenes/2-miscallaneous/1-runtime-map-building/1-runtime-map-building.tscn"
 config/icon="res://icon.png"
 
+[autoload]
+
+CS_AssetLoader="*res://scripts/globals/AssetLoader.gd"
+
 [editor_plugins]
 
 enabled=PoolStringArray( "res://addons/qodot/plugin.cfg" )
