@@ -1,0 +1,13 @@
+[remap]
+
+importer="qodot.map"
+type="Resource"
+path="res://.import/movementTest.map-de0c9035cd87817ea1c391b238125edc.tres"
+
+[deps]
+
+source_file="res://trenchbroom_data/maps/movementTest.map"
+dest_files=[ "res://.import/movementTest.map-de0c9035cd87817ea1c391b238125edc.tres" ]
+
+[params]
+
