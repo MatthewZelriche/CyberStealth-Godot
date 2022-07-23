@@ -18,6 +18,9 @@ public class PlayerMovee : Spatial
 	// A modifier to control how quickly the player decelerates to a stop at low speeds, in combination with friction.
 	// See: sv_stopspeed
 	private float stopSpeed = 1.1905f;
+	[Export]
+	// Speed of constant gravity force, in meters per second.
+	private float gravity = 15.24f;
 
 	[Export]
 	private float horzSens = 0.5f;
@@ -77,7 +80,8 @@ public class PlayerMovee : Spatial
 
 	void ApplyFriction(float physDelta)
 	{
-		float lastSpeed = velocity.Length();
+		float lastSpeed = GetVec2D(velocity).Length();
+		GD.Print(lastSpeed);
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.05)
 		{
@@ -87,24 +91,30 @@ public class PlayerMovee : Spatial
 		{
 			// stopspeed only scales decel at low speeds.
 			float finalStopSpeedScale = Mathf.Max(stopSpeed, lastSpeed);
-			Vector3 decelAmount = velocity.Normalized() * friction * finalStopSpeedScale;
+			Vector3 decelAmount = GetVec2D(velocity).Normalized() * friction * finalStopSpeedScale;
 			velocity -= decelAmount * physDelta;
 		}
+	}
+
+	void ApplyGravity()
+	{
+		velocity.y = (Vector3.Down * gravity).y;
 	}
 
 	void CalcNewVel(Vector3 wishDir, float physDelta)
 	{
 		ApplyFriction(physDelta);
+		ApplyGravity();
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
-		float curSpeed = velocity.Dot(wishDir);
+		float curSpeed = velocity.Dot(GetVec2D(wishDir));
 		float addSpeed = Mathf.Clamp(maxWalkSpeed - curSpeed, 0, maxAccel * physDelta);
 
 		// Increase our vel based on addSpeed in the wishdir.
 		velocity = velocity + addSpeed * wishDir;
-		realSpeed = velocity.Length();
-		GD.Print(realSpeed);
+		realSpeed = GetVec2D(velocity).Length();
+		//GD.Print(realSpeed);
 	}
 	
 	public override void _Input(InputEvent @event)
@@ -130,4 +140,9 @@ public class PlayerMovee : Spatial
 			camRef.RotationDegrees = cameraRotDeg;
 		}
 	}	 
+
+	Vector3 GetVec2D(Vector3 inVec)
+	{
+		return new Vector3(inVec.x, 0, inVec.z);
+	}
 }
