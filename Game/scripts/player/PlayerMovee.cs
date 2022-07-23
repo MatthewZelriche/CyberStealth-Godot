@@ -20,7 +20,7 @@ public class PlayerMovee : Spatial
 	private float stopSpeed = 1.1905f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
-	private float gravity = 10.0f;
+	private float gravity = 12.0f;
 	[Export]
 	private float maxWalkAngle = 45.0f;
 
@@ -128,7 +128,10 @@ public class PlayerMovee : Spatial
 
 	void CalcNewVel(Vector3 wishDir, float physDelta)
 	{
-		ApplyFriction(physDelta);
+		if (isGrounded)
+		{
+			ApplyFriction(physDelta);
+		}
 		ApplyGravity();
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
