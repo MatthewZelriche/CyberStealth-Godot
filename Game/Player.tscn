@@ -1,11 +1,14 @@
-[gd_scene load_steps=4 format=2]
+[gd_scene load_steps=5 format=2]
 
-[ext_resource path="res://scripts/player/PlayerMove.cs" type="Script" id=1]
+[ext_resource path="res://scripts/player/PlayerMovee.cs" type="Script" id=1]
 
 [sub_resource type="PhysicsMaterial" id=1]
 friction = 0.0
 
 [sub_resource type="CylinderShape" id=2]
+
+[sub_resource type="SpatialMaterial" id=3]
+albedo_color = Color( 1, 0, 0, 1 )
 
 [node name="Player" type="RigidBody"]
 mode = 2
@@ -24,4 +27,8 @@ transform = Transform( 1, 0, 0, 0, 3.3, 0, 0, 0, 1, 0, 0, 0 )
 sides = 32
 
 [node name="Camera" type="Camera" parent="."]
-transform = Transform( 0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 1, 0 )
+transform = Transform( 1, 0, 5.96047e-08, 0, 1, 0, -5.96047e-08, 0, 1, 0, 1, 0 )
+
+[node name="ForwardHint" type="CSGBox" parent="."]
+transform = Transform( 0.4, 0, 0, 0, 0.2, 0, 0, 0, 0.5, 0, 1, -1 )
+material = SubResource( 3 )

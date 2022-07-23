@@ -130,4 +130,6 @@ shape = SubResource( 13 )
 shape = SubResource( 14 )
 
 [node name="Player" parent="." instance=ExtResource( 3 )]
-transform = Transform( -5.96046e-08, 0, -1, 0, 1, 0, 1, 0, -5.96046e-08, -22, 3, 0 )
+transform = Transform( 1, 0, -2.98023e-08, 0, 1, 0, 2.98023e-08, 0, 1, -11, 3.19, 0 )
+contacts_reported = 5
+contact_monitor = true
