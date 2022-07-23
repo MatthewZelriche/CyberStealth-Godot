@@ -20,7 +20,9 @@ public class PlayerMovee : Spatial
 	private float stopSpeed = 1.1905f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
-	private float gravity = 15.24f;
+	private float gravity = 10.0f;
+	[Export]
+	private float maxWalkAngle = 45.0f;
 
 	[Export]
 	private float horzSens = 0.5f;
@@ -32,6 +34,8 @@ public class PlayerMovee : Spatial
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
 	float realSpeed = 0.0f;
+
+	bool isGrounded;
 
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
@@ -45,6 +49,28 @@ public class PlayerMovee : Spatial
 
 	void _integrate_forces(PhysicsDirectBodyState state)
 	{
+		// Check if player is grounded.
+		if (state.GetContactCount() == 0)
+		{
+			isGrounded = false;
+		}
+		for (int i = 0; i < state.GetContactCount(); i++)
+		{
+			Vector3 surfNormal = state.GetContactLocalNormal(i);
+
+			float angle = Mathf.Rad2Deg(Mathf.Acos(surfNormal.Dot(Vector3.Up) / surfNormal.Length()));
+			if (angle < maxWalkAngle)
+			{
+				isGrounded = true;
+				break;
+			}
+			else
+			{
+				isGrounded = false;
+
+			}
+		}
+
 		Vector3 wishDir = CalcWishDir();
 		CalcNewVel(wishDir, state.Step);
 		state.LinearVelocity = velocity;
@@ -81,7 +107,6 @@ public class PlayerMovee : Spatial
 	void ApplyFriction(float physDelta)
 	{
 		float lastSpeed = GetVec2D(velocity).Length();
-		GD.Print(lastSpeed);
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.05)
 		{
