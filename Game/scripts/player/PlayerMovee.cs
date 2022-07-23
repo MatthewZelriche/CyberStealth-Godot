@@ -20,7 +20,7 @@ public class PlayerMovee : Spatial
 	private float stopSpeed = 1.1905f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
-	private float gravity = 12.0f;
+	private float gravity = -12.0f;
 	[Export]
 	private float maxWalkAngle = 45.0f;
 
@@ -34,6 +34,8 @@ public class PlayerMovee : Spatial
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
 	float realSpeed = 0.0f;
+
+	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
 
 	bool isGrounded;
 
@@ -49,7 +51,9 @@ public class PlayerMovee : Spatial
 
 	void _integrate_forces(PhysicsDirectBodyState state)
 	{
+		GD.Print(velTracker.GetTrackedLinearVelocity().Length());
 		// Check if player is grounded.
+		// TODO: Consider using get_rest_state instead.
 		if (state.GetContactCount() == 0)
 		{
 			isGrounded = false;
@@ -74,6 +78,8 @@ public class PlayerMovee : Spatial
 		Vector3 wishDir = CalcWishDir();
 		CalcNewVel(wishDir, state.Step);
 		state.LinearVelocity = velocity;
+
+		velTracker.UpdatePosition(GlobalTransform.origin);
 	}
 
 	Vector3 CalcWishDir()
@@ -123,26 +129,28 @@ public class PlayerMovee : Spatial
 
 	void ApplyGravity()
 	{
-		velocity.y = (Vector3.Down * gravity).y;
+		velocity.y = (Vector3.Up * gravity).y;
 	}
 
 	void CalcNewVel(Vector3 wishDir, float physDelta)
 	{
+		// TODO: Handle slopes and stairs.
+		// eg: https://thelowrooms.xyz/articledir/programming_stepclimbing.php
 		if (isGrounded)
 		{
 			ApplyFriction(physDelta);
+		} else
+		{
+			ApplyGravity();
 		}
-		ApplyGravity();
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
-		float curSpeed = velocity.Dot(GetVec2D(wishDir));
+		float curSpeed = velocity.Dot(wishDir);
 		float addSpeed = Mathf.Clamp(maxWalkSpeed - curSpeed, 0, maxAccel * physDelta);
 
 		// Increase our vel based on addSpeed in the wishdir.
 		velocity = velocity + addSpeed * wishDir;
-		realSpeed = GetVec2D(velocity).Length();
-		//GD.Print(realSpeed);
 	}
 	
 	public override void _Input(InputEvent @event)
