@@ -7,8 +7,8 @@ func _ready():
 func load_user_assets():
 	# Don't execute in editor mode, this is meant for standalone only.
 	# All "internal" textures will be imported normally.
-	#if !OS.has_feature("standalone"):
-	#	return
+	if !OS.has_feature("standalone"):
+		return
 	
 	var exePath = OS.get_executable_path().get_base_dir() + "/"
 	var tabletop_importer = ClassDB.instance("TabletopImporter")
