@@ -29,11 +29,14 @@ public class PlayerMovee : Spatial
 	[Export]
 	private float vertSens = 0.5f;
 
+	// TODO: Expose to console.
+	bool drawDebug = true;
+
 	private Vector3 velocity;
+	private Vector3 wishDir;
 	private Camera camRef;
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
-	float realSpeed = 0.0f;
 
 	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
 
@@ -51,7 +54,6 @@ public class PlayerMovee : Spatial
 
 	void _integrate_forces(PhysicsDirectBodyState state)
 	{
-		GD.Print(velTracker.GetTrackedLinearVelocity().Length());
 		// Check if player is grounded.
 		// TODO: Consider using get_rest_state instead.
 		if (state.GetContactCount() == 0)
@@ -84,7 +86,7 @@ public class PlayerMovee : Spatial
 
 	Vector3 CalcWishDir()
 	{
-		Vector3 wishDir = new Vector3();
+		wishDir = new Vector3();
 		// Ignore Y dir of basis vectors so that camera pitch doesn't cause player to move up or down by looking.
 		Vector3 forward2D = new Vector3(camRef.GlobalTransform.basis.z.x, 0, camRef.GlobalTransform.basis.z.z);
 		Vector3 right2D = new Vector3(camRef.GlobalTransform.basis.x.x, 0, camRef.GlobalTransform.basis.x.z);
@@ -175,7 +177,24 @@ public class PlayerMovee : Spatial
 			cameraRotDeg.x = pitch;
 			camRef.RotationDegrees = cameraRotDeg;
 		}
-	}	 
+	}
+
+	public override void _Process(float delta)
+	{
+		if (drawDebug)
+		{
+			DebugDraw.DrawArrowRay3D(GlobalTransform.origin, wishDir.Normalized(), 1.25f, new Color(255, 0, 0));
+			DebugDraw.DrawArrowRay3D(GlobalTransform.origin, velocity.Normalized(), velocity.Length() / 5, new Color(0, 255, 0));
+
+			DebugDraw.TextBackgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.1f);
+			DebugDraw.TextForegroundColor = new Color(0.0f, 0.0f, 0.0f, 1.0f);
+			DebugDraw.BeginTextGroup("Player Information");
+			DebugDraw.SetText("Real Velocity:", velTracker.GetTrackedLinearVelocity(), 0);
+			DebugDraw.SetText("Real speed:", velTracker.GetTrackedLinearVelocity().Length(), 1);
+			DebugDraw.SetText("Is Grounded: ", isGrounded, 2);
+			DebugDraw.EndTextGroup();
+		}
+	}
 
 	Vector3 GetVec2D(Vector3 inVec)
 	{

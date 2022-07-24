@@ -213,6 +213,7 @@ config/icon="res://icon.png"
 [autoload]
 
 CS_AssetLoader="*res://scripts/globals/AssetLoader.gd"
+DebugDraw="*res://addons/debug_draw_cs/DebugDraw.cs"
 
 [editor_plugins]
 
