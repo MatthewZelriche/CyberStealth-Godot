@@ -149,7 +149,7 @@ public class PlayerMovee : RigidBody
 			// Confirm that what we are stepping onto is within our max slope allowance.
 			Dictionary results = space.GetRestInfo(query);
 			Vector3 resNormal = (Vector3)results["normal"];
-			float angle = 90 - Mathf.Rad2Deg(resNormal.Dot(Vector3.Up) / resNormal.Length());
+			float angle = GetVec3Angle(resNormal, Vector3.Up);
 
 			// Don't attempt a stepup if the angle exceeds our allowance.
 			if (angle <= maxWalkAngle)
@@ -216,6 +216,39 @@ public class PlayerMovee : RigidBody
 		velocity.y = (Vector3.Up * gravity).y;
 	}
 
+	bool CalcWallVelSlide(ref Vector3 nextVel, PhysicsDirectBodyState state)
+	{
+		int count = state.GetContactCount();
+		for (int i = 0; i < count; i++)
+		{
+			// First check if our contact is a non-walkable wall.
+			Vector3 normal = state.GetContactLocalNormal(i);
+			float angle = GetVec3Angle(normal, Vector3.Up);
+			if (angle > maxWalkAngle)
+			{
+				// Then check if we are moving "towards" this non-walkable wall.
+				if (GetVec3Angle(nextVel, -normal) < 90.0f)
+				{
+					// Check if our next predicted move will continue to collide with a wall
+					// This is done to prevent us from "sticking" to the wall.
+					PhysicsTestMotionResult result = new PhysicsTestMotionResult();
+					bool hit = PhysicsServer.BodyTestMotion(GetRid(), GlobalTransform, nextVel * state.Step, true, result);
+					if (hit)
+					{
+						// Slide our velocity along the wall normal.
+						Vector3 goalPos = GlobalTransform.origin + nextVel;
+						Vector3 distance = goalPos - GlobalTransform.origin;
+						distance = distance.Slide(normal);
+						nextVel = distance;
+						return true;
+					}
+				}
+			}
+		}
+		
+		return false;
+	}
+
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
 		if (isGrounded)
@@ -239,6 +272,8 @@ public class PlayerMovee : RigidBody
 		// Increase our vel based on addSpeed in the wishdir.
 		Vector3 predictedNextVel = velocity + addSpeed * wishDir;
 
+		// Test for wall collisions that would change our velocity.
+		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
 		float amtMoved = CheckSlope(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
@@ -295,5 +330,11 @@ public class PlayerMovee : RigidBody
 	Vector3 GetVec2D(Vector3 inVec)
 	{
 		return new Vector3(inVec.x, 0, inVec.z);
+	}
+
+	float GetVec3Angle(Vector3 first, Vector3 second)
+	{
+		// TODO: Is this right?
+		return 90 - Mathf.Rad2Deg(first.Dot(second) / (first.Length() * second.Length()));
 	}
 }

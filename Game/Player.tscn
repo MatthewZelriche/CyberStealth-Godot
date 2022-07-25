@@ -16,6 +16,8 @@ mode = 2
 physics_material_override = SubResource( 1 )
 custom_integrator = true
 continuous_cd = true
+contacts_reported = 4
+contact_monitor = true
 can_sleep = false
 script = ExtResource( 1 )
 
