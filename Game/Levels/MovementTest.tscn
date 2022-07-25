@@ -162,7 +162,6 @@ shape = SubResource( 19 )
 [node name="Player" parent="." instance=ExtResource( 3 )]
 transform = Transform( 1, 0, -2.98023e-08, 0, 1, 0, 2.98023e-08, 0, 1, -14, 2.19, -9 )
 contacts_reported = 5
-contact_monitor = true
 
 [node name="CSGBox" type="CSGBox" parent="."]
 transform = Transform( 0.8, 0, 0, 0, 1, 0, 0, 0, 0.8, -15.4415, 5.17857, -8 )

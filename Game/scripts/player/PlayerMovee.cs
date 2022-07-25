@@ -1,6 +1,19 @@
 using Godot;
 using Godot.Collections;
 
+
+/*
+ * TODO:
+ * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
+ * * Implement the step-down portion of CheckSlope.
+ * * Smooth damp camera on step.
+ * * Implement jumping.
+ * * Consider a gravity model that is not a constant force.
+ * * Consider clipping player velocity while in air.
+ * * Consider clipping player velocity while in air.
+ * * Add an air control var.
+ */
+
 public class PlayerMovee : RigidBody
 {
 	[Export]
@@ -141,7 +154,6 @@ public class PlayerMovee : RigidBody
 		if (Mathf.IsEqualApprox((float)res[0], 1.0f))
 		{
 			// We didn't find an up step...Keep checking for a down step.
-			// TODO
 			return 0;
 		} else
 		{
@@ -226,26 +238,31 @@ public class PlayerMovee : RigidBody
 			float angle = GetVec3Angle(normal, Vector3.Up);
 			if (angle > maxWalkAngle)
 			{
-				// Then check if we are moving "towards" this non-walkable wall.
-				if (GetVec3Angle(nextVel, -normal) < 90.0f)
+				// Confirm this isn't a wall we can simply step over.
+				float floorY = GlobalTransform.origin.y / 2;
+				if ((state.GetContactColliderPosition(i).y - floorY) > (floorY + maxStepHeight))
 				{
-					// Check if our next predicted move will continue to collide with a wall
-					// This is done to prevent us from "sticking" to the wall.
-					PhysicsTestMotionResult result = new PhysicsTestMotionResult();
-					bool hit = PhysicsServer.BodyTestMotion(GetRid(), GlobalTransform, nextVel * state.Step, true, result);
-					if (hit)
+					DebugDraw.DrawSphere(state.GetContactColliderPosition(i), 0.2f);
+					// Then check if we are moving "towards" this non-walkable wall.
+					if (GetVec3Angle(nextVel, -normal) < 90.0f)
 					{
-						// Slide our velocity along the wall normal.
-						Vector3 goalPos = GlobalTransform.origin + nextVel;
-						Vector3 distance = goalPos - GlobalTransform.origin;
-						distance = distance.Slide(normal);
-						nextVel = distance;
-						return true;
+						// Check if our next predicted move will continue to collide with a wall
+						// This is done to prevent us from "sticking" to the wall.
+						PhysicsTestMotionResult result = new PhysicsTestMotionResult();
+						bool hit = PhysicsServer.BodyTestMotion(GetRid(), GlobalTransform, nextVel * state.Step, true, result);
+						if (hit)
+						{
+							// Slide our velocity along the wall normal.
+							Vector3 goalPos = GlobalTransform.origin + nextVel;
+							Vector3 distance = goalPos - GlobalTransform.origin;
+							distance = distance.Slide(normal);
+							nextVel = distance;
+							return true;
+						}
 					}
 				}
 			}
 		}
-		
 		return false;
 	}
 
