@@ -82,7 +82,7 @@ public class PlayerMovee : RigidBody
 		}
 	}
 
-	void _integrate_forces(PhysicsDirectBodyState state)
+	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
 		TestGround(state);
 		CalcWishDir();
@@ -106,7 +106,9 @@ public class PlayerMovee : RigidBody
 		var space = GetWorld().DirectSpaceState;
 		PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
 		// Set up our initial query to overlap our real collider.
-		CylinderShape traceShape = ((CylinderShape)collider.Shape);
+		CylinderShape traceShape = new CylinderShape();
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
+		traceShape.Height = ((CylinderShape)collider.Shape).Height;
 		query.SetShape(traceShape);
 		query.Exclude = new Array(this);
 		query.Transform = collider.GlobalTransform;
@@ -117,7 +119,6 @@ public class PlayerMovee : RigidBody
 		float traverseAmt = maxStepHeight * (float)res[0];
 		temp.origin = new Vector3(temp.origin.x, temp.origin.y + traverseAmt, temp.origin.z);
 		query.Transform = temp;
-		DebugDraw.DrawCylinder(query.Transform.origin, traceShape.Radius, traceShape.Height);
 
 		// If we hit a ceiling, we need to track how far up we moved for later calculations.
 		float missingTraverseAmount = Mathf.Abs(traverseAmt - maxStepHeight);
@@ -130,6 +131,8 @@ public class PlayerMovee : RigidBody
 		query.Transform = temp;
 
 		// Next, we cast down to see if we actually find a step we can move up onto.
+		// Reduce the shape's radius very slightly to avoid detecting walls the player is rubbing up against.
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius - 0.05f;
 		res = space.CastMotion(query, Vector3.Down * (maxStepHeight - missingTraverseAmount));
 		temp = query.Transform;
 		temp.origin = new Vector3(temp.origin.x, temp.origin.y - ((maxStepHeight - missingTraverseAmount) * (float)res[0]), temp.origin.z);
@@ -143,11 +146,23 @@ public class PlayerMovee : RigidBody
 		} else
 		{
 			// Found a spot to step up!
-			var oldTransform = state.Transform;
-			Vector3 oldOrigin = oldTransform.origin;
-			oldTransform.origin = query.Transform.origin;
-			state.Transform = oldTransform;
-			return (state.Transform.origin - oldOrigin).Length();
+			// Confirm that what we are stepping onto is within our max slope allowance.
+			Dictionary results = space.GetRestInfo(query);
+			Vector3 resNormal = (Vector3)results["normal"];
+			float angle = 90 - Mathf.Rad2Deg(resNormal.Dot(Vector3.Up) / resNormal.Length());
+
+			// Don't attempt a stepup if the angle exceeds our allowance.
+			if (angle <= maxWalkAngle)
+			{
+				var oldTransform = state.Transform;
+				Vector3 oldOrigin = oldTransform.origin;
+				oldTransform.origin = query.Transform.origin;
+				state.Transform = oldTransform;
+				return (state.Transform.origin - oldOrigin).Length();
+			} else
+			{
+				return 0;
+			}
 		}
 	}
 
