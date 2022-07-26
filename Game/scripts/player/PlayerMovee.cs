@@ -5,7 +5,6 @@ using Godot.Collections;
 /*
  * TODO:
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
- * * Implement the step-down portion of CheckSlope.
  * * Smooth damp camera on step.
  * * Implement jumping.
  * * Consider a gravity model that is not a constant force.
@@ -115,7 +114,7 @@ public class PlayerMovee : RigidBody
 	float CheckSlope(Vector3 moveDelta, PhysicsDirectBodyState state)
 	{
 		if (velocity == Vector3.Zero) { return 0; }
-		
+
 		var space = GetWorld().DirectSpaceState;
 		PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
 		// Set up our initial query to overlap our real collider.
@@ -154,6 +153,32 @@ public class PlayerMovee : RigidBody
 		if (Mathf.IsEqualApprox((float)res[0], 1.0f))
 		{
 			// We didn't find an up step...Keep checking for a down step.
+			res = space.CastMotion(query, Vector3.Down * (maxStepHeight));
+			temp = query.Transform;
+			temp.origin = new Vector3(temp.origin.x, temp.origin.y - ((maxStepHeight) * (float)res[0]), temp.origin.z);
+			query.Transform = temp;
+
+			float floorY = GlobalTransform.origin.y / 2;
+			if (Mathf.Abs((query.Transform.origin.y / 2) - floorY) > 0.05)
+			{
+				// Found a spot to step down!
+				// Confirm that what we are stepping onto is within our max slope allowance.
+				Dictionary results = space.GetRestInfo(query);
+				if (results.Count == 0) { return 0; }
+				Vector3 resNormal = (Vector3)results["normal"];
+				float angle = GetVec3Angle(resNormal, Vector3.Up);
+
+				// Don't attempt a stepdown if the angle exceeds our allowance.
+				if (angle <= maxWalkAngle)
+				{
+					GD.Print("Grub");
+					var oldTransform = state.Transform;
+					Vector3 oldOrigin = oldTransform.origin;
+					oldTransform.origin = query.Transform.origin;
+					state.Transform = oldTransform;
+					return (state.Transform.origin - oldOrigin).Length();
+				}
+			}
 			return 0;
 		} else
 		{
@@ -305,7 +330,7 @@ public class PlayerMovee : RigidBody
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
 		float amtMoved = CheckSlope(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
-		
+
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
 	}
 	
