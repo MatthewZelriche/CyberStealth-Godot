@@ -28,9 +28,9 @@ shape = SubResource( 2 )
 transform = Transform( 1, 0, 0, 0, 3.3, 0, 0, 0, 1, 0, 0, 0 )
 sides = 32
 
-[node name="Camera" type="Camera" parent="."]
-transform = Transform( 1, 0, 5.96047e-08, 0, 1, 0, -5.96047e-08, 0, 1, 0, 1, 0 )
-
 [node name="ForwardHint" type="CSGBox" parent="."]
 transform = Transform( 0.4, 0, 0, 0, 0.2, 0, 0, 0, 0.5, 0, 1, -1 )
 material = SubResource( 3 )
+
+[node name="Camera" type="Camera" parent="."]
+transform = Transform( 1, 0, 5.96047e-08, 0, 1, 0, -5.96047e-08, 0, 1, 0, 1, 0 )

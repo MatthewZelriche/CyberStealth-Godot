@@ -5,7 +5,6 @@ using Godot.Collections;
 /*
  * TODO:
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
- * * Smooth damp camera on step.
  * * Implement jumping.
  * * Consider a gravity model that is not a constant force.
  * * Consider clipping player velocity while in air.
@@ -68,6 +67,7 @@ public class PlayerMovee : RigidBody
 		Input.SetMouseMode(Input.MouseMode.Captured);
 
 		camRef = GetNode<Camera>("Camera");
+		camRef.SetAsToplevel(true);
 		maxAccel = maxAccel * maxWalkSpeed;
 	}
 
@@ -362,15 +362,30 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
+		// Update cam pos with player.
+		var transform = camRef.Transform;
+		transform.origin.x = this.GlobalTransform.origin.x;
+		transform.origin.z = this.GlobalTransform.origin.z;
+		if (isGrounded)
+		{
+			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 1.5f * delta * 10);
+		} else
+		{
+			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
+		}
+		camRef.Transform = transform;
+
+
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{
 			DebugDraw.Freeze3DRender = true;
 		}
-		
 		if (drawDebug)
 		{
-			DebugDraw.DrawArrowRay3D(GlobalTransform.origin, wishDir.Normalized(), 1.25f, new Color(255, 0, 0));
-			DebugDraw.DrawArrowRay3D(GlobalTransform.origin, velocity.Normalized(), velocity.Length() / 5, new Color(0, 255, 0));
+			Vector3 rayOrigin = camRef.Transform.origin;
+			rayOrigin.y -=  0.75f;
+			DebugDraw.DrawArrowRay3D(rayOrigin, wishDir.Normalized(), 1.25f, new Color(255, 0, 0));
+			DebugDraw.DrawArrowRay3D(rayOrigin, velocity.Normalized(), velocity.Length() / 5, new Color(0, 255, 0));
 
 			DebugDraw.TextBackgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.1f);
 			DebugDraw.TextForegroundColor = new Color(0.0f, 0.0f, 0.0f, 1.0f);
