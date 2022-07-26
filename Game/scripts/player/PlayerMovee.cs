@@ -304,17 +304,13 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
+		// Reset gravity every tick.
+		velocity.y = 0.0f;
 		if (isGrounded)
 		{
 			// Friction is apparently not applied while airborne in quake-style movement systems
 			// TODO: Should maxspeed be capped while moving in the air? How do other games do it?
 			ApplyFriction(state.Step);
-		} else
-		{
-			// When the user is grounded, gravity doesn't exist.
-			// Helps avoid some issues with slopes, and applying constant
-			// gravity while on the ground seems redundant anyway.
-			ApplyGravity();
 		}
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
@@ -330,6 +326,12 @@ public class PlayerMovee : RigidBody
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
 		float amtMoved = CheckSlope(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
+
+		// Apply gravity after we've determined our horz trajectory.
+		if (!isGrounded)
+		{
+			ApplyGravity();
+		}
 
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
 	}
