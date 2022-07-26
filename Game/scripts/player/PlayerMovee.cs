@@ -40,7 +40,7 @@ public class PlayerMovee : RigidBody
 	private float maxWalkAngle = 45.0f;
 	[Export]
 	// The maximum height a player can smoothly step up onto without jumping.
-	private float maxStepHeight = 0.75f;
+	private float maxStepHeight = 0.53f;
 
 	[Export]
 	private float horzSens = 0.5f;
@@ -230,36 +230,47 @@ public class PlayerMovee : RigidBody
 
 	bool CalcWallVelSlide(ref Vector3 nextVel, PhysicsDirectBodyState state)
 	{
-		int count = state.GetContactCount();
-		for (int i = 0; i < count; i++)
+		var space = GetWorld().DirectSpaceState;
+		PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
+		// Set up our initial query to overlap our real collider minus our step height.
+		CylinderShape traceShape = new CylinderShape();
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
+		traceShape.Height = ((CylinderShape)collider.Shape).Height - maxStepHeight;
+		query.SetShape(traceShape);
+		Array excludeList = new Array(this);
+		query.Exclude = excludeList;
+		query.Transform = collider.GlobalTransform;
+		Transform trans;
+		trans = query.Transform;
+		trans.origin.y += maxStepHeight/2;
+		query.Transform = trans;
+
+		var temp = query.Transform;
+		temp.origin = query.Transform.origin + (nextVel * state.Step);
+		query.Transform = temp;
+		var res = space.IntersectShape(query);
+		if (res.Count > 0)
 		{
-			// First check if our contact is a non-walkable wall.
-			Vector3 normal = state.GetContactLocalNormal(i);
-			float angle = GetVec3Angle(normal, Vector3.Up);
-			if (angle > maxWalkAngle)
+			Array results = space.IntersectShape(query);
+			for (int i = 0; i < results.Count; i++)
 			{
-				// Confirm this isn't a wall we can simply step over.
-				float floorY = GlobalTransform.origin.y / 2;
-				if ((state.GetContactColliderPosition(i).y - floorY) > (floorY + maxStepHeight))
+				Dictionary hitResults = space.GetRestInfo(query);
+				DebugDraw.DrawSphere((Vector3)hitResults["point"], 0.25f);
+				if (hitResults.Count > 0)
 				{
-					DebugDraw.DrawSphere(state.GetContactColliderPosition(i), 0.2f);
-					// Then check if we are moving "towards" this non-walkable wall.
+					Vector3 normal = (Vector3)hitResults["normal"];
 					if (GetVec3Angle(nextVel, -normal) < 90.0f)
 					{
-						// Check if our next predicted move will continue to collide with a wall
-						// This is done to prevent us from "sticking" to the wall.
-						PhysicsTestMotionResult result = new PhysicsTestMotionResult();
-						bool hit = PhysicsServer.BodyTestMotion(GetRid(), GlobalTransform, nextVel * state.Step, true, result);
-						if (hit)
-						{
-							// Slide our velocity along the wall normal.
-							Vector3 goalPos = GlobalTransform.origin + nextVel;
-							Vector3 distance = goalPos - GlobalTransform.origin;
-							distance = distance.Slide(normal);
-							nextVel = distance;
-							return true;
-						}
+						// Slide our velocity along the wall normal.
+						Vector3 goalPos = GlobalTransform.origin + nextVel;
+						Vector3 distance = goalPos - GlobalTransform.origin;
+						distance = distance.Slide(normal);
+						nextVel = distance;
+						return true;
 					}
+
+					excludeList.Add(hitResults["rid"]);
+					query.Exclude = excludeList;
 				}
 			}
 		}
@@ -294,9 +305,9 @@ public class PlayerMovee : RigidBody
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
 		float amtMoved = CheckSlope(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
-
+		
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
-}
+	}
 	
 	public override void _Input(InputEvent @event)
 	{
