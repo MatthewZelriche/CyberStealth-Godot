@@ -2,8 +2,8 @@
 
 importer="texture"
 type="StreamTexture"
-path.s3tc="res://.import/TestMat1.png-9d4adafd16336b612f1693beb2b51bd9.s3tc.stex"
-path.etc2="res://.import/TestMat1.png-9d4adafd16336b612f1693beb2b51bd9.etc2.stex"
+path.s3tc="res://.import/Deco.png-9eb1b1d455abdfdd018fde2fbd4b684d.s3tc.stex"
+path.etc2="res://.import/Deco.png-9eb1b1d455abdfdd018fde2fbd4b684d.etc2.stex"
 metadata={
 "imported_formats": [ "s3tc", "etc2" ],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://trenchbroom_data/textures/debug/TestMat1.png"
-dest_files=[ "res://.import/TestMat1.png-9d4adafd16336b612f1693beb2b51bd9.s3tc.stex", "res://.import/TestMat1.png-9d4adafd16336b612f1693beb2b51bd9.etc2.stex" ]
+source_file="res://trenchbroom_data/textures/debug/Deco.png"
+dest_files=[ "res://.import/Deco.png-9eb1b1d455abdfdd018fde2fbd4b684d.s3tc.stex", "res://.import/Deco.png-9eb1b1d455abdfdd018fde2fbd4b684d.etc2.stex" ]
 
 [params]
 

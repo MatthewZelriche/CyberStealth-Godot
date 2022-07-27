@@ -6,8 +6,9 @@ using Godot.Collections;
  * TODO:
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
  * * Fix CheckSlope not working when colliding with stairs while airborne.
- * * Consider clipping player velocity while in air.
- * * Add an air control var.
+ * * Investigate an air control var.
+ * * Investigate smoother mouse look.
+ * * Does bhopping need a single frame on the ground frictionless?
  */
 
 public class PlayerMovee : RigidBody
@@ -29,21 +30,21 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// A modifier to control how quickly the player decelerates to a stop at low speeds, in combination with friction.
 	// See: sv_stopspeed
-	private float stopSpeed = 1.1905f;
+	private float stopSpeed = 3.125f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
-	private float gravity = -15.24f;
+	private float gravity = -25.00f;
 	[Export]
 	// A limit on how steep a slope can be before a player cannot traverse it. 
 	private float maxWalkAngle = 45.0f;
 	[Export]
 	// The maximum height a player can smoothly step up onto without jumping.
-	private float maxStepHeight = 0.53f;
+	private float maxStepHeight = 0.5625f;
 
 	[Export]
-	private float horzSens = 0.5f;
+	private float horzSens = 0.25f;
 	[Export]
-	private float vertSens = 0.5f;
+	private float vertSens = 0.25f;
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
@@ -288,7 +289,6 @@ public class PlayerMovee : RigidBody
 			for (int i = 0; i < results.Count; i++)
 			{
 				Dictionary hitResults = space.GetRestInfo(query);
-				DebugDraw.DrawSphere((Vector3)hitResults["point"], 0.25f);
 				if (hitResults.Count > 0)
 				{
 					Vector3 normal = (Vector3)hitResults["normal"];
@@ -387,7 +387,7 @@ public class PlayerMovee : RigidBody
 		transform.origin.z = this.GlobalTransform.origin.z;
 		if (isGrounded)
 		{
-			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 1.5f * delta * 10);
+			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 2.5f * delta * 10);
 		} else
 		{
 			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
