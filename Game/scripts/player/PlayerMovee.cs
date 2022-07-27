@@ -5,9 +5,7 @@ using Godot.Collections;
 /*
  * TODO:
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
- * * Implement jumping.
- * * Consider a gravity model that is not a constant force.
- * * Consider clipping player velocity while in air.
+ * * Fix CheckSlope not working when colliding with stairs while airborne.
  * * Consider clipping player velocity while in air.
  * * Add an air control var.
  */
@@ -32,7 +30,7 @@ public class PlayerMovee : RigidBody
 	private float stopSpeed = 1.1905f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
-	private float gravity = -12.0f;
+	private float gravity = -15.24f;
 	[Export]
 	// A limit on how steep a slope can be before a player cannot traverse it. 
 	private float maxWalkAngle = 45.0f;
@@ -58,6 +56,8 @@ public class PlayerMovee : RigidBody
 	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
 
 	bool isGrounded;
+	bool lastGroundedState;
+	bool shouldJump = false;
 
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
@@ -74,7 +74,8 @@ public class PlayerMovee : RigidBody
 	void TestGround(PhysicsDirectBodyState state)
 	{
 		// TODO: Consider using get_rest_state instead.
-		if (state.GetContactCount() == 0) { isGrounded = false; }
+		if (state.GetContactCount() == 0) { isGrounded = false; return; }
+		if (velocity.y > 0.0f) { isGrounded = false; return; }
 
 		for (int i = 0; i < state.GetContactCount(); i++)
 		{
@@ -92,10 +93,16 @@ public class PlayerMovee : RigidBody
 
 			}
 		}
+
+		if (lastGroundedState == false && isGrounded == true)
+		{
+			velocity.y = 0.0f;
+		}
 	}
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
+		lastGroundedState = isGrounded;
 		TestGround(state);
 		CalcWishDir();
 		// While we calculate velocity every frame for internal use, 
@@ -171,7 +178,6 @@ public class PlayerMovee : RigidBody
 				// Don't attempt a stepdown if the angle exceeds our allowance.
 				if (angle <= maxWalkAngle)
 				{
-					GD.Print("Grub");
 					var oldTransform = state.Transform;
 					Vector3 oldOrigin = oldTransform.origin;
 					oldTransform.origin = query.Transform.origin;
@@ -247,10 +253,10 @@ public class PlayerMovee : RigidBody
 		}
 	}
 
-	void ApplyGravity()
+	void ApplyGravity(float physDelta)
 	{
 		// TODO: Currently a constant force. Should gravity be an accelerating force?
-		velocity.y = (Vector3.Up * gravity).y;
+		velocity.y += (Vector3.Up * gravity * physDelta).y;
 	}
 
 	bool CalcWallVelSlide(ref Vector3 nextVel, PhysicsDirectBodyState state)
@@ -304,8 +310,6 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
-		// Reset gravity every tick.
-		velocity.y = 0.0f;
 		if (isGrounded)
 		{
 			// Friction is apparently not applied while airborne in quake-style movement systems
@@ -324,13 +328,15 @@ public class PlayerMovee : RigidBody
 		// Test for wall collisions that would change our velocity.
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		float amtMoved = CheckSlope(predictedNextVel, state);
+		//float amtMoved = CheckSlope(predictedNextVel, state);
+		float amtMoved = isGrounded ? CheckSlope(predictedNextVel, state) : 0.0f;
+		//float amtMoved = 0;
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
 
 		// Apply gravity after we've determined our horz trajectory.
 		if (!isGrounded)
 		{
-			ApplyGravity();
+			ApplyGravity(state.Step);
 		}
 
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
@@ -362,6 +368,15 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
+
+		if (Input.IsActionJustPressed("Jump"))
+		{
+			velocity.y += 8.2f;
+			isGrounded = false;
+			shouldJump = true;
+		}
+		GD.Print(velocity.y);
+
 		// Update cam pos with player.
 		var transform = camRef.Transform;
 		transform.origin.x = this.GlobalTransform.origin.x;
@@ -374,7 +389,6 @@ public class PlayerMovee : RigidBody
 			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
 		}
 		camRef.Transform = transform;
-
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{

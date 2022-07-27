@@ -170,4 +170,4 @@ transform = Transform( 0.8, 0, 0, 0, 1, 0, 0, 0, 0.8, -15.4415, 5.17857, -8 )
 use_collision = true
 
 [node name="Player" parent="." instance=ExtResource( 3 )]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, -21.9891, 4.58479, 0 )
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, -20.8657, 5.95557, -0.736989 )
