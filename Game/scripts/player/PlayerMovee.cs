@@ -63,13 +63,14 @@ public class PlayerMovee : RigidBody
 	CollisionShape collider;
 	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
 
-	bool isGrounded;
-	bool justLanded = false;
-	bool lastGroundedState;
+	StateMachine movementStates;
 
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
+		movementStates = new StateMachine();
+		movementStates.PushState(MovementStates.Ground);
+
 		collider = GetNode<CollisionShape>("CollisionShape");
 		GetNode<Spatial>("ForwardHint").Visible = false;
 		Input.SetMouseMode(Input.MouseMode.Captured);
@@ -79,7 +80,7 @@ public class PlayerMovee : RigidBody
 		maxAccel = maxAccel * maxWalkSpeed;
 	}
 
-	bool TestGround(PhysicsDirectBodyState state)
+	internal bool TestGround(PhysicsDirectBodyState state)
 	{
 		// TODO: Consider using get_rest_state instead.
 		if (state.GetContactCount() == 0) { return false; }
@@ -97,11 +98,19 @@ public class PlayerMovee : RigidBody
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
-		lastGroundedState = isGrounded;
-		isGrounded = TestGround(state);
+		bool wasAirborneLastFrame = movementStates.ContainsState(MovementStates.Air);
+		if (TestGround(state))
+		{
+			movementStates.RemoveHierarchy(MovementStates.Air);
+			movementStates.PushState(MovementStates.Ground);
+		} else
+		{
+			movementStates.RemoveHierarchy(MovementStates.Ground);
+			movementStates.PushState(MovementStates.Air);
+		}
 
 		// Did we land this frame?
-		if (lastGroundedState == false && isGrounded == true)
+		if (wasAirborneLastFrame && movementStates.ContainsState(MovementStates.Ground))
 		{
 			OnPlayerLanded();
 		}
@@ -236,7 +245,7 @@ public class PlayerMovee : RigidBody
 	void ApplyFriction(float physDelta)
 	{
 		// Ensure there exists a single frame after landing where we do not apply friction.
-		if (justLanded) { justLanded = false; return; }
+		if (movementStates.GetCurrentState() == MovementStates.Landed) { movementStates.PopState(); return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.05)
@@ -307,14 +316,14 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
-		if (isGrounded) { ApplyFriction(state.Step); }
+		if (movementStates.ContainsState(MovementStates.Ground)) { ApplyFriction(state.Step); }
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
 		float curSpeed = velocity.Dot(wishDir);
 
 		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
-		float maxSpeed = isGrounded ? maxWalkSpeed : maxAirSpeed;
+		float maxSpeed = movementStates.ContainsState(MovementStates.Ground) ? maxWalkSpeed : maxAirSpeed;
 		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
 		// Increase our vel based on addSpeed in the wishdir.
@@ -323,11 +332,11 @@ public class PlayerMovee : RigidBody
 		// Test for wall collisions that would change our velocity.
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		float amtMoved = isGrounded ? CheckSlope(predictedNextVel, state) : 0.0f;
+		float amtMoved = movementStates.ContainsState(MovementStates.Ground) ? CheckSlope(predictedNextVel, state) : 0.0f;
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
 
 		// Apply gravity after we've determined our horz trajectory.
-		if (!isGrounded) { ApplyGravity(state.Step); }
+		if (movementStates.ContainsState(MovementStates.Air)) { ApplyGravity(state.Step); }
 
 		// Return whether we should actually post this velocity to the physics server (if we didn't manually teleport the player.
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
@@ -359,9 +368,8 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
-
 		bool jumpPress = autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
-		if (jumpPress && isGrounded)
+		if (jumpPress && movementStates.ContainsState(MovementStates.Ground))
 		{
 			OnBeginJump();
 		}
@@ -370,7 +378,7 @@ public class PlayerMovee : RigidBody
 		var transform = camRef.Transform;
 		transform.origin.x = this.GlobalTransform.origin.x;
 		transform.origin.z = this.GlobalTransform.origin.z;
-		if (isGrounded)
+		if (movementStates.ContainsState(MovementStates.Ground))
 		{
 			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 2.5f * delta * 10);
 		} else
@@ -395,20 +403,22 @@ public class PlayerMovee : RigidBody
 			DebugDraw.BeginTextGroup("Player Information");
 			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velTracker.GetTrackedLinearVelocity()), 0);
 			DebugDraw.SetText("Real Horz speed:", GetVec2D(velTracker.GetTrackedLinearVelocity()).Length(), 1);
-			DebugDraw.SetText("Is Grounded: ", isGrounded, 3);
+			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 3);
 			DebugDraw.EndTextGroup();
 		}
 	}
 
 	protected virtual void OnPlayerLanded()
 	{
-		justLanded = true;
+		movementStates.PushState(MovementStates.Landed);
 		velocity.y = 0;
 	}
 	protected virtual void OnBeginJump()
 	{
 		velocity.y += jumpForce;
-		isGrounded = false;
+		movementStates.RemoveHierarchy(MovementStates.Ground);
+		movementStates.PushState(MovementStates.Air);
+		movementStates.PushState(MovementStates.Jump);
 	}
 
 	Vector3 GetVec2D(Vector3 inVec)
