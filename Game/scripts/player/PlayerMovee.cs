@@ -373,7 +373,7 @@ public class PlayerMovee : RigidBody
 	public override void _Process(float delta)
 	{
 
-		if (Input.IsActionJustPressed("Jump"))
+		if (Input.IsActionJustPressed("Jump") && isGrounded)
 		{
 			velocity.y += 8.2f;
 			isGrounded = false;
