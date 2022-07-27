@@ -4,6 +4,7 @@ using Godot.Collections;
 
 /*
  * TODO:
+ * * proper movement state machine.
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
  * * Fix CheckSlope not working when colliding with stairs while airborne.
  * * Investigate an air control var.
@@ -35,6 +36,9 @@ public class PlayerMovee : RigidBody
 	// Speed of constant gravity force, in meters per second.
 	private float gravity = -25.00f;
 	[Export]
+	// How much upward velocity is instantly applied to the player on jump.
+	private float jumpForce = 8.2f;
+	[Export]
 	// A limit on how steep a slope can be before a player cannot traverse it. 
 	private float maxWalkAngle = 45.0f;
 	[Export]
@@ -42,12 +46,13 @@ public class PlayerMovee : RigidBody
 	private float maxStepHeight = 0.5625f;
 
 	[Export]
-	private float horzSens = 0.25f;
+	private float horzSens = 0.5f;
 	[Export]
-	private float vertSens = 0.25f;
+	private float vertSens = 0.5f;
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
+	bool autojump = false;
 
 	private Vector3 velocity;
 	private Vector3 wishDir;
@@ -59,8 +64,8 @@ public class PlayerMovee : RigidBody
 	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
 
 	bool isGrounded;
+	bool justLanded = false;
 	bool lastGroundedState;
-	bool shouldJump = false;
 
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
@@ -74,50 +79,39 @@ public class PlayerMovee : RigidBody
 		maxAccel = maxAccel * maxWalkSpeed;
 	}
 
-	void TestGround(PhysicsDirectBodyState state)
+	bool TestGround(PhysicsDirectBodyState state)
 	{
 		// TODO: Consider using get_rest_state instead.
-		if (state.GetContactCount() == 0) { isGrounded = false; return; }
-		if (velocity.y > 0.0f) { isGrounded = false; return; }
+		if (state.GetContactCount() == 0) { return false; }
+		if (velocity.y > 0.0f) { return false; }
 
 		for (int i = 0; i < state.GetContactCount(); i++)
 		{
 			Vector3 surfNormal = state.GetContactLocalNormal(i);
 
 			float angle = Mathf.Rad2Deg(Mathf.Acos(surfNormal.Dot(Vector3.Up) / surfNormal.Length()));
-			if (angle < maxWalkAngle)
-			{
-				isGrounded = true;
-				break;
-			}
-			else
-			{
-				isGrounded = false;
-
-			}
+			if (angle < maxWalkAngle) { return true; }
 		}
-
-		if (lastGroundedState == false && isGrounded == true)
-		{
-			velocity.y = 0.0f;
-		}
+		return false;
 	}
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
 		lastGroundedState = isGrounded;
-		TestGround(state);
+		isGrounded = TestGround(state);
+
+		// Did we land this frame?
+		if (lastGroundedState == false && isGrounded == true)
+		{
+			OnPlayerLanded();
+		}
+
 		CalcWishDir();
 		// While we calculate velocity every frame for internal use, 
 		// we only send the updated velocity to the physics server if we DIDN'T find a slope/step
 		// and teleport the player. Otherwise, we end up with excessive speed as the physics server
 		// adds our new velocity on top of the teleport we did.
-		if (!CalcNewVel(state)) {
-			state.LinearVelocity = Vector3.Zero;
-		} else
-		{
-			state.LinearVelocity = velocity;
-		}
+		state.LinearVelocity = CalcNewVel(state) ? velocity : Vector3.Zero;
 		velTracker.UpdatePosition(GlobalTransform.origin);
 	}
 
@@ -241,6 +235,8 @@ public class PlayerMovee : RigidBody
 
 	void ApplyFriction(float physDelta)
 	{
+		// Ensure there exists a single frame after landing where we do not apply friction.
+		if (justLanded) { justLanded = false; return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.05)
@@ -258,7 +254,6 @@ public class PlayerMovee : RigidBody
 
 	void ApplyGravity(float physDelta)
 	{
-		// TODO: Currently a constant force. Should gravity be an accelerating force?
 		velocity.y += (Vector3.Up * gravity * physDelta).y;
 	}
 
@@ -312,17 +307,13 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
-		if (isGrounded)
-		{
-			// Friction is apparently not applied while airborne in quake-style movement systems
-			// TODO: Should maxspeed be capped while moving in the air? How do other games do it?
-			ApplyFriction(state.Step);
-		}
+		if (isGrounded) { ApplyFriction(state.Step); }
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
 		float curSpeed = velocity.Dot(wishDir);
 
+		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
 		float maxSpeed = isGrounded ? maxWalkSpeed : maxAirSpeed;
 		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
@@ -332,17 +323,13 @@ public class PlayerMovee : RigidBody
 		// Test for wall collisions that would change our velocity.
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		//float amtMoved = CheckSlope(predictedNextVel, state);
 		float amtMoved = isGrounded ? CheckSlope(predictedNextVel, state) : 0.0f;
-		//float amtMoved = 0;
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
 
 		// Apply gravity after we've determined our horz trajectory.
-		if (!isGrounded)
-		{
-			ApplyGravity(state.Step);
-		}
+		if (!isGrounded) { ApplyGravity(state.Step); }
 
+		// Return whether we should actually post this velocity to the physics server (if we didn't manually teleport the player.
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
 	}
 	
@@ -373,13 +360,11 @@ public class PlayerMovee : RigidBody
 	public override void _Process(float delta)
 	{
 
-		if (Input.IsActionJustPressed("Jump") && isGrounded)
+		bool jumpPress = autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
+		if (jumpPress && isGrounded)
 		{
-			velocity.y += 8.2f;
-			isGrounded = false;
-			shouldJump = true;
+			OnBeginJump();
 		}
-		GD.Print(velocity.y);
 
 		// Update cam pos with player.
 		var transform = camRef.Transform;
@@ -410,9 +395,20 @@ public class PlayerMovee : RigidBody
 			DebugDraw.BeginTextGroup("Player Information");
 			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velTracker.GetTrackedLinearVelocity()), 0);
 			DebugDraw.SetText("Real Horz speed:", GetVec2D(velTracker.GetTrackedLinearVelocity()).Length(), 1);
-			DebugDraw.SetText("Is Grounded: ", isGrounded, 2);
+			DebugDraw.SetText("Is Grounded: ", isGrounded, 3);
 			DebugDraw.EndTextGroup();
 		}
+	}
+
+	protected virtual void OnPlayerLanded()
+	{
+		justLanded = true;
+		velocity.y = 0;
+	}
+	protected virtual void OnBeginJump()
+	{
+		velocity.y += jumpForce;
+		isGrounded = false;
 	}
 
 	Vector3 GetVec2D(Vector3 inVec)
