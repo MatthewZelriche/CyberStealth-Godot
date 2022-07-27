@@ -17,6 +17,8 @@ public class PlayerMovee : RigidBody
 	// See: sv_maxspeed
 	private float maxWalkSpeed = 10.0f;
 	[Export]
+	private float maxAirSpeed = 0.9375f;
+	[Export]
 	// How much friction is applied to decelerating the player. A measure of how "slippery" surfaces will feel.
 	// See: sv_friction
 	private float friction = 4.0f;
@@ -320,7 +322,9 @@ public class PlayerMovee : RigidBody
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
 		float curSpeed = velocity.Dot(wishDir);
-		float addSpeed = Mathf.Clamp(maxWalkSpeed - curSpeed, 0, maxAccel * state.Step);
+
+		float maxSpeed = isGrounded ? maxWalkSpeed : maxAirSpeed;
+		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
 		// Increase our vel based on addSpeed in the wishdir.
 		Vector3 predictedNextVel = velocity + addSpeed * wishDir;
