@@ -4,12 +4,10 @@ using Godot.Collections;
 
 /*
  * TODO:
- * * proper movement state machine.
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
- * * Fix CheckSlope not working when colliding with stairs while airborne.
+ * * Fix player not being able to step up at slow speeds.
  * * Investigate an air control var.
  * * Investigate smoother mouse look.
- * * Does bhopping need a single frame on the ground frictionless?
  */
 
 public class PlayerMovee : RigidBody
@@ -46,9 +44,9 @@ public class PlayerMovee : RigidBody
 	private float maxStepHeight = 0.5625f;
 
 	[Export]
-	private float horzSens = 0.5f;
+	private float horzSens = 0.4f;
 	[Export]
-	private float vertSens = 0.5f;
+	private float vertSens = 0.4f;
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
@@ -194,6 +192,8 @@ public class PlayerMovee : RigidBody
 		if (Mathf.IsEqualApprox((float)res[0], 1.0f))
 		{
 			// We didn't find an up step...Keep checking for a down step.
+			// Don't test down when in the air - it prevents us from jumping.
+			if (movementStates.ContainsState(MovementStates.Air)) { return 0; }
 			res = space.CastMotion(query, Vector3.Down * (maxStepHeight));
 			temp = query.Transform;
 			temp.origin = new Vector3(temp.origin.x, temp.origin.y - ((maxStepHeight) * (float)res[0]), temp.origin.z);
@@ -360,7 +360,7 @@ public class PlayerMovee : RigidBody
 		// Test for wall collisions that would change our velocity.
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		float amtMoved = movementStates.ContainsState(MovementStates.Ground) ? CheckSlope(predictedNextVel, state) : 0.0f;
+		float amtMoved = CheckSlope(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
 
 		// Apply gravity after we've determined our horz trajectory.
@@ -408,7 +408,7 @@ public class PlayerMovee : RigidBody
 		transform.origin.z = this.GlobalTransform.origin.z;
 		if (movementStates.ContainsState(MovementStates.Ground))
 		{
-			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 2.5f * delta * 10);
+			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 1.5f * delta * 10);
 		} else
 		{
 			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
