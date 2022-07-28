@@ -96,6 +96,19 @@ public class PlayerMovee : RigidBody
 		return false;
 	}
 
+	float CalcMaxSpeed()
+	{
+		if (movementStates.ContainsState(MovementStates.Walk))
+		{
+			return maxWalkSpeed;
+		} else if (movementStates.ContainsState(MovementStates.Air))
+		{
+			return maxAirSpeed;
+		}
+
+		return 0;
+	}
+
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
 		bool wasAirborneLastFrame = movementStates.ContainsState(MovementStates.Air);
@@ -103,6 +116,7 @@ public class PlayerMovee : RigidBody
 		{
 			movementStates.RemoveHierarchy(MovementStates.Air);
 			movementStates.PushState(MovementStates.Ground);
+			movementStates.PushState(MovementStates.Walk);
 		} else
 		{
 			movementStates.RemoveHierarchy(MovementStates.Ground);
@@ -122,6 +136,20 @@ public class PlayerMovee : RigidBody
 		// adds our new velocity on top of the teleport we did.
 		state.LinearVelocity = CalcNewVel(state) ? velocity : Vector3.Zero;
 		velTracker.UpdatePosition(GlobalTransform.origin);
+
+
+		if (movementStates.ContainsState(MovementStates.Air) && (velocity.y < 0))
+		{
+			if (movementStates.ContainsState(MovementStates.Jump) && !movementStates.ContainsState(MovementStates.Fall))
+			{
+				OnPlayerJumpApex();
+			}
+			if (!movementStates.ContainsState(MovementStates.Fall))
+			{
+				OnPlayerBeginFalling();
+			}
+			movementStates.PushState(MovementStates.Fall);
+		}
 	}
 
 	float CheckSlope(Vector3 moveDelta, PhysicsDirectBodyState state)
@@ -323,7 +351,7 @@ public class PlayerMovee : RigidBody
 		float curSpeed = velocity.Dot(wishDir);
 
 		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
-		float maxSpeed = movementStates.ContainsState(MovementStates.Ground) ? maxWalkSpeed : maxAirSpeed;
+		float maxSpeed = CalcMaxSpeed();
 		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
 		// Increase our vel based on addSpeed in the wishdir.
@@ -419,6 +447,16 @@ public class PlayerMovee : RigidBody
 		movementStates.RemoveHierarchy(MovementStates.Ground);
 		movementStates.PushState(MovementStates.Air);
 		movementStates.PushState(MovementStates.Jump);
+	}
+
+	protected virtual void OnPlayerJumpApex()
+	{
+		GD.Print("Jump apex!");
+	}
+
+	protected virtual void OnPlayerBeginFalling()
+	{
+		GD.Print("Begin falling!");
 	}
 
 	Vector3 GetVec2D(Vector3 inVec)

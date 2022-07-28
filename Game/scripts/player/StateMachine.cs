@@ -55,7 +55,7 @@ public class StateMachine
 
 		Array arr = states.ToArray();
 
-		GD.Print(arr.Length);
+		Array.Reverse(arr);
 		foreach (MovementStates state in arr)
         {
 			output += state.ToString();
