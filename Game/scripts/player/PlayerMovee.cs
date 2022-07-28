@@ -59,8 +59,6 @@ public class PlayerMovee : RigidBody
 	private float yaw = 0.0f;
 
 	CollisionShape collider;
-	SpatialVelocityTracker velTracker = new SpatialVelocityTracker();
-
 	StateMachine movementStates;
 
 	// Called when the node enters the scene tree for the first time.
@@ -80,7 +78,6 @@ public class PlayerMovee : RigidBody
 
 	internal bool TestGround(PhysicsDirectBodyState state)
 	{
-		// TODO: Consider using get_rest_state instead.
 		if (state.GetContactCount() == 0) { return false; }
 		if (velocity.y > 0.0f) { return false; }
 
@@ -121,21 +118,6 @@ public class PlayerMovee : RigidBody
 			movementStates.PushState(MovementStates.Air);
 		}
 
-		// Did we land this frame?
-		if (wasAirborneLastFrame && movementStates.ContainsState(MovementStates.Ground))
-		{
-			OnPlayerLanded();
-		}
-
-		CalcWishDir();
-		// While we calculate velocity every frame for internal use, 
-		// we only send the updated velocity to the physics server if we DIDN'T find a slope/step
-		// and teleport the player. Otherwise, we end up with excessive speed as the physics server
-		// adds our new velocity on top of the teleport we did.
-		state.LinearVelocity = CalcNewVel(state) ? velocity : Vector3.Zero;
-		velTracker.UpdatePosition(GlobalTransform.origin);
-
-
 		if (movementStates.ContainsState(MovementStates.Air) && (velocity.y < 0))
 		{
 			if (movementStates.ContainsState(MovementStates.Jump) && !movementStates.ContainsState(MovementStates.Fall))
@@ -148,63 +130,61 @@ public class PlayerMovee : RigidBody
 			}
 			movementStates.PushState(MovementStates.Fall);
 		}
+
+		// Did we land this frame?
+		if (wasAirborneLastFrame && movementStates.ContainsState(MovementStates.Ground))
+		{
+			OnPlayerLanded();
+		}
+
+		CalcWishDir();
+		// While we calculate velocity every frame for internal use, 
+		// we only send the updated velocity to the physics server if we DIDN'T find a slope/step
+		// and teleport the player. Otherwise, we end up with excessive speed as the physics server
+		// adds our new velocity on top of the teleport we did.
+		state.LinearVelocity = CalcNewVel(state) ? velocity : Vector3.Zero;
 	}
 
-	float CheckSlope(Vector3 moveDelta, PhysicsDirectBodyState state)
+	float AttemptStep(Vector3 moveDelta, PhysicsDirectBodyState state)
 	{
 		if (velocity == Vector3.Zero) { return 0; }
 
 		var space = GetWorld().DirectSpaceState;
-		PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
 		// Set up our initial query to overlap our real collider.
 		CylinderShape traceShape = new CylinderShape();
 		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
 		traceShape.Height = ((CylinderShape)collider.Shape).Height;
-		query.SetShape(traceShape);
-		query.Exclude = new Array(this);
-		query.Transform = collider.GlobalTransform;
 
+		Array excludeList = new Array(this);
 		// First, get the highest we can move up our step height without hitting a ceiling.
-		var res = space.CastMotion(query, Vector3.Up * maxStepHeight);
-		var temp = query.Transform;
-		float traverseAmt = maxStepHeight * (float)res[0];
-		temp.origin = new Vector3(temp.origin.x, temp.origin.y + traverseAmt, temp.origin.z);
-		query.Transform = temp;
-
+		var res = Utils.TestMotion(space, traceShape, collider.GlobalTransform.origin, Vector3.Up * maxStepHeight, excludeList);
+		float traverseAmt = maxStepHeight * res.safeMovement;
 		// If we hit a ceiling, we need to track how far up we moved for later calculations.
 		float missingTraverseAmount = Mathf.Abs(traverseAmt - maxStepHeight);
 
 		// Second, move horizontally along the velocity direction to "test" whether we will collide 
 		// for our next simulation step.
-		res = space.CastMotion(query, moveDelta * state.Step);
-		temp = query.Transform;
-		temp.origin = query.Transform.origin + (moveDelta * state.Step * (float)res[0]);
-		query.Transform = temp;
+		res = Utils.TestMotion(space, traceShape, res.newShapePos, moveDelta * state.Step, excludeList);
 
 		// Next, we cast down to see if we actually find a step we can move up onto.
 		// Reduce the shape's radius very slightly to avoid detecting walls the player is rubbing up against.
 		traceShape.Radius = ((CylinderShape)collider.Shape).Radius - 0.05f;
-		res = space.CastMotion(query, Vector3.Down * (maxStepHeight - missingTraverseAmount));
-		temp = query.Transform;
-		temp.origin = new Vector3(temp.origin.x, temp.origin.y - ((maxStepHeight - missingTraverseAmount) * (float)res[0]), temp.origin.z);
-		query.Transform = temp;
+		res = Utils.TestMotion(space, traceShape, res.newShapePos, Vector3.Down * (maxStepHeight - missingTraverseAmount), excludeList);
 
-		if (Mathf.IsEqualApprox((float)res[0], 1.0f))
+		if (Mathf.IsEqualApprox(res.safeMovement, 1.0f))
 		{
 			// We didn't find an up step...Keep checking for a down step.
 			// Don't test down when in the air - it prevents us from jumping.
 			if (movementStates.ContainsState(MovementStates.Air)) { return 0; }
-			res = space.CastMotion(query, Vector3.Down * (maxStepHeight));
-			temp = query.Transform;
-			temp.origin = new Vector3(temp.origin.x, temp.origin.y - ((maxStepHeight) * (float)res[0]), temp.origin.z);
-			query.Transform = temp;
+			res = Utils.TestMotion(space, traceShape, res.newShapePos, Vector3.Down * (maxStepHeight), excludeList);
 
 			float floorY = GlobalTransform.origin.y / 2;
-			if (Mathf.Abs((query.Transform.origin.y / 2) - floorY) > 0.05)
+			if (Mathf.Abs((res.newShapePos.y / 2) - floorY) > 0.05)
 			{
 				// Found a spot to step down!
 				// Confirm that what we are stepping onto is within our max slope allowance.
-				Dictionary results = space.GetRestInfo(query);
+				Dictionary results;
+				Utils.TestIntersection(space, traceShape, res.newShapePos, out results, excludeList);
 				if (results.Count == 0) { return 0; }
 				Vector3 resNormal = (Vector3)results["normal"];
 				float angle = GetVec3Angle(resNormal, Vector3.Up);
@@ -214,7 +194,7 @@ public class PlayerMovee : RigidBody
 				{
 					var oldTransform = state.Transform;
 					Vector3 oldOrigin = oldTransform.origin;
-					oldTransform.origin = query.Transform.origin;
+					oldTransform.origin = res.newShapePos;
 					state.Transform = oldTransform;
 					return (state.Transform.origin - oldOrigin).Length();
 				}
@@ -224,7 +204,8 @@ public class PlayerMovee : RigidBody
 		{
 			// Found a spot to step up!
 			// Confirm that what we are stepping onto is within our max slope allowance.
-			Dictionary results = space.GetRestInfo(query);
+			Dictionary results;
+			Utils.TestIntersection(space, traceShape, res.newShapePos, out results, excludeList);
 			Vector3 resNormal = (Vector3)results["normal"];
 			float angle = GetVec3Angle(resNormal, Vector3.Up);
 
@@ -233,7 +214,7 @@ public class PlayerMovee : RigidBody
 			{
 				var oldTransform = state.Transform;
 				Vector3 oldOrigin = oldTransform.origin;
-				oldTransform.origin = query.Transform.origin;
+				oldTransform.origin = res.newShapePos;
 				state.Transform = oldTransform;
 				return (state.Transform.origin - oldOrigin).Length();
 			} else
@@ -276,7 +257,7 @@ public class PlayerMovee : RigidBody
 		if (movementStates.GetCurrentState() == MovementStates.Landed) { movementStates.PopState(); return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
-		if (lastSpeed <= 0.05)
+		if (lastSpeed <= 0.1f)
 		{
 			velocity = Vector3.Zero;
 		}
@@ -302,41 +283,21 @@ public class PlayerMovee : RigidBody
 		CylinderShape traceShape = new CylinderShape();
 		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
 		traceShape.Height = ((CylinderShape)collider.Shape).Height - maxStepHeight;
-		query.SetShape(traceShape);
-		Array excludeList = new Array(this);
-		query.Exclude = excludeList;
-		query.Transform = collider.GlobalTransform;
-		Transform trans;
-		trans = query.Transform;
-		trans.origin.y += maxStepHeight/2;
-		query.Transform = trans;
 
-		var temp = query.Transform;
-		temp.origin = query.Transform.origin + (nextVel * state.Step);
-		query.Transform = temp;
-		var res = space.IntersectShape(query);
-		if (res.Count > 0)
+		Array results = new Array();
+		Utils.TestMultiIntersection(space, traceShape, GlobalTransform.origin, new Array(this), results);
+
+		foreach (Dictionary hitResult in results)
 		{
-			Array results = space.IntersectShape(query);
-			for (int i = 0; i < results.Count; i++)
+			Vector3 normal = (Vector3)hitResult["normal"];
+			if (GetVec3Angle(nextVel, -normal) < 90.0f)
 			{
-				Dictionary hitResults = space.GetRestInfo(query);
-				if (hitResults.Count > 0)
-				{
-					Vector3 normal = (Vector3)hitResults["normal"];
-					if (GetVec3Angle(nextVel, -normal) < 90.0f)
-					{
-						// Slide our velocity along the wall normal.
-						Vector3 goalPos = GlobalTransform.origin + nextVel;
-						Vector3 distance = goalPos - GlobalTransform.origin;
-						distance = distance.Slide(normal);
-						nextVel = distance;
-						return true;
-					}
-
-					excludeList.Add(hitResults["rid"]);
-					query.Exclude = excludeList;
-				}
+				// Slide our velocity along the wall normal.
+				Vector3 goalPos = GlobalTransform.origin + nextVel;
+				Vector3 distance = goalPos - GlobalTransform.origin;
+				distance = distance.Slide(normal);
+				nextVel = distance;
+				return true;
 			}
 		}
 		return false;
@@ -360,7 +321,7 @@ public class PlayerMovee : RigidBody
 		// Test for wall collisions that would change our velocity.
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		float amtMoved = CheckSlope(predictedNextVel, state);
+		float amtMoved = AttemptStep(predictedNextVel, state);
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
 
 		// Apply gravity after we've determined our horz trajectory.
@@ -429,9 +390,9 @@ public class PlayerMovee : RigidBody
 			DebugDraw.TextBackgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.1f);
 			DebugDraw.TextForegroundColor = new Color(0.0f, 0.0f, 0.0f, 1.0f);
 			DebugDraw.BeginTextGroup("Player Information");
-			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velTracker.GetTrackedLinearVelocity()), 0);
-			DebugDraw.SetText("Real Horz speed:", GetVec2D(velTracker.GetTrackedLinearVelocity()).Length(), 1);
-			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 3);
+			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velocity), 0);
+			DebugDraw.SetText("Real Horz speed:", GetVec2D(velocity).Length(), 1);
+			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 2);
 			DebugDraw.EndTextGroup();
 		}
 	}
