@@ -9,7 +9,6 @@ using Godot.Collections;
 
 /*
  * TODO:
- * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
  * * Investigate an air control var.
  * * Investigate smoother mouse look.
  */
@@ -19,7 +18,7 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// The top speed, in meters per second, that a player may initiate without movement tricks (bhopping, etc)
 	// See: sv_maxspeed = 10.0
-	private float maxWalkSpeed = 1.5f;
+	private float maxWalkSpeed = 10.0f;
 	[Export]
 	private float maxAirSpeed = 0.9375f;
 	[Export]
@@ -29,11 +28,11 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// The maximum amount a player can accelerate in a single physics step.
 	// See: sv_accelerate = 10.0
-	private float maxAccel = 7.0f;
+	private float maxAccel = 10.0f;
 	[Export]
 	// A modifier to control how quickly the player decelerates to a stop at low speeds, in combination with friction.
 	// See: sv_stopspeed = 3.125
-	private float stopSpeed = 1.75f;
+	private float stopSpeed = 2.125f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
 	private float gravity = -25.00f;
@@ -113,6 +112,7 @@ public class PlayerMovee : RigidBody
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
+		AxisLockLinearY = false;
 		bool wasAirborneLastFrame = movementStates.ContainsState(MovementStates.Air);
 		if (TestGround(state))
 		{
@@ -222,6 +222,10 @@ public class PlayerMovee : RigidBody
 				oldTransform.origin = finalPos;
 				state.Transform = oldTransform;
 				return (state.Transform.origin - oldOrigin).Length();
+			} else
+			{
+				// Hack to (mostly) prevent bumping up and down steep slopes. Doesn't work all the time (why?)
+				if (movementStates.ContainsState(MovementStates.Ground)) { AxisLockLinearY = true; }
 			}
 		}
 
@@ -261,7 +265,7 @@ public class PlayerMovee : RigidBody
 		if (movementStates.GetCurrentState() == MovementStates.Landed) { movementStates.PopState(); return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
-		if (lastSpeed <= 0.1f)
+		if (lastSpeed <= 0.08f)
 		{
 			velocity = Vector3.Zero;
 		}
@@ -370,7 +374,7 @@ public class PlayerMovee : RigidBody
 		var transform = camRef.Transform;
 		transform.origin.x = this.GlobalTransform.origin.x;
 		transform.origin.z = this.GlobalTransform.origin.z;
-			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
+		transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
 		camRef.Transform = transform;
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
