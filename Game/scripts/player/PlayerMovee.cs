@@ -2,10 +2,14 @@ using Godot;
 using Godot.Collections;
 
 
+// Possible crouch values:
+// maxWalkSpeed = 1.5f;
+// maxAccel = 7.0f;
+// stopSpeed = 1.75f;
+
 /*
  * TODO:
  * * Fix Jittery movement when colliding with a steep slope, due to CalcWallSlideVel. (ignore this, maybe?)
- * * Fix player not being able to step up at slow speeds.
  * * Investigate an air control var.
  * * Investigate smoother mouse look.
  */
@@ -14,22 +18,22 @@ public class PlayerMovee : RigidBody
 {
 	[Export]
 	// The top speed, in meters per second, that a player may initiate without movement tricks (bhopping, etc)
-	// See: sv_maxspeed
-	private float maxWalkSpeed = 10.0f;
+	// See: sv_maxspeed = 10.0
+	private float maxWalkSpeed = 1.5f;
 	[Export]
 	private float maxAirSpeed = 0.9375f;
 	[Export]
 	// How much friction is applied to decelerating the player. A measure of how "slippery" surfaces will feel.
-	// See: sv_friction
+	// See: sv_friction = 4.0
 	private float friction = 4.0f;
 	[Export]
 	// The maximum amount a player can accelerate in a single physics step.
-	// See: sv_accelerate
-	private float maxAccel = 10.0f;
+	// See: sv_accelerate = 10.0
+	private float maxAccel = 7.0f;
 	[Export]
 	// A modifier to control how quickly the player decelerates to a stop at low speeds, in combination with friction.
-	// See: sv_stopspeed
-	private float stopSpeed = 3.125f;
+	// See: sv_stopspeed = 3.125
+	private float stopSpeed = 1.75f;
 	[Export]
 	// Speed of constant gravity force, in meters per second.
 	private float gravity = -25.00f;
@@ -58,6 +62,8 @@ public class PlayerMovee : RigidBody
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
 
+	private float colliderMargin;
+
 	CollisionShape collider;
 	StateMachine movementStates;
 
@@ -74,6 +80,7 @@ public class PlayerMovee : RigidBody
 		camRef = GetNode<Camera>("Camera");
 		camRef.SetAsToplevel(true);
 		maxAccel = maxAccel * maxWalkSpeed;
+		colliderMargin = collider.Shape.Margin;
 	}
 
 	internal bool TestGround(PhysicsDirectBodyState state)
@@ -148,80 +155,77 @@ public class PlayerMovee : RigidBody
 	float AttemptStep(Vector3 moveDelta, PhysicsDirectBodyState state)
 	{
 		if (velocity == Vector3.Zero) { return 0; }
-
+		Array ignoreThis = new Array(this);
 		var space = GetWorld().DirectSpaceState;
-		// Set up our initial query to overlap our real collider.
+
 		CylinderShape traceShape = new CylinderShape();
 		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
 		traceShape.Height = ((CylinderShape)collider.Shape).Height;
+		Array results = new Array();
 
-		Array excludeList = new Array(this);
-		// First, get the highest we can move up our step height without hitting a ceiling.
-		var res = Utils.TestMotion(space, traceShape, collider.GlobalTransform.origin, Vector3.Up * maxStepHeight, excludeList);
-		float traverseAmt = maxStepHeight * res.safeMovement;
+		Utils.TestMotion(space, traceShape, collider.GlobalTransform.origin, Vector3.Up * maxStepHeight, ref results, ignoreThis);
+		Vector3 maxUpPos = collider.GlobalTransform.origin + Utils.ScaleVector(Vector3.Up * maxStepHeight, (float)results[0]);
 		// If we hit a ceiling, we need to track how far up we moved for later calculations.
-		float missingTraverseAmount = Mathf.Abs(traverseAmt - maxStepHeight);
+		float missingTraverseAmount = Mathf.Abs((maxStepHeight * (float)results[0]) - maxStepHeight);
+		results.Clear();
 
-		// Second, move horizontally along the velocity direction to "test" whether we will collide 
-		// for our next simulation step.
-		res = Utils.TestMotion(space, traceShape, res.newShapePos, moveDelta * state.Step, excludeList);
+		// Account for margin, otherwise we can't step up at slow speeds.
+		Vector3 forwardMotion = (moveDelta * state.Step).Normalized() * ((moveDelta * state.Step).Length() + colliderMargin);
+		Utils.TestMotion(space, traceShape, maxUpPos, forwardMotion, ref results, ignoreThis);
+		Vector3 maxForwardPos = maxUpPos + Utils.ScaleVector(forwardMotion, (float)results[0]);
+		results.Clear();
 
-		// Next, we cast down to see if we actually find a step we can move up onto.
 		// Reduce the shape's radius very slightly to avoid detecting walls the player is rubbing up against.
-		traceShape.Radius = ((CylinderShape)collider.Shape).Radius - 0.05f;
-		res = Utils.TestMotion(space, traceShape, res.newShapePos, Vector3.Down * (maxStepHeight - missingTraverseAmount), excludeList);
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
+		Utils.TestMotion(space, traceShape, maxForwardPos, Vector3.Down * (maxStepHeight - missingTraverseAmount), ref results, ignoreThis);
+		Vector3 finalPos = maxForwardPos + Utils.ScaleVector(Vector3.Down * (maxStepHeight - missingTraverseAmount), (float)results[0]);
 
-		if (Mathf.IsEqualApprox(res.safeMovement, 1.0f))
+		if (Mathf.IsEqualApprox((float)results[0], 1.0f))
 		{
-			// We didn't find an up step...Keep checking for a down step.
-			// Don't test down when in the air - it prevents us from jumping.
+			results.Clear();
+			// Didn't find a place to step...
 			if (movementStates.ContainsState(MovementStates.Air)) { return 0; }
-			res = Utils.TestMotion(space, traceShape, res.newShapePos, Vector3.Down * (maxStepHeight), excludeList);
-
-			float floorY = GlobalTransform.origin.y / 2;
-			if (Mathf.Abs((res.newShapePos.y / 2) - floorY) > 0.05)
+			// Attempt to step down
+			Utils.TestMotion(space, traceShape, finalPos, Vector3.Down * maxStepHeight, ref results, ignoreThis);
+			finalPos = finalPos + Utils.ScaleVector(Vector3.Down * maxStepHeight, (float)results[0]);
+			if (!Mathf.IsZeroApprox((float)results[0]))
 			{
-				// Found a spot to step down!
+				// Found a spot to step down.
 				// Confirm that what we are stepping onto is within our max slope allowance.
-				Dictionary results;
-				Utils.TestIntersection(space, traceShape, res.newShapePos, out results, excludeList);
-				if (results.Count == 0) { return 0; }
-				Vector3 resNormal = (Vector3)results["normal"];
+				Dictionary hitResult = new Dictionary();
+				Utils.TestIntersection(space, traceShape, finalPos, ref hitResult, ignoreThis);
+				if (hitResult.Count == 0) { return 0; } // Why?
+				Vector3 resNormal = (Vector3)hitResult["normal"];
 				float angle = GetVec3Angle(resNormal, Vector3.Up);
-
-				// Don't attempt a stepdown if the angle exceeds our allowance.
 				if (angle <= maxWalkAngle)
 				{
 					var oldTransform = state.Transform;
 					Vector3 oldOrigin = oldTransform.origin;
-					oldTransform.origin = res.newShapePos;
+					oldTransform.origin = finalPos;
 					state.Transform = oldTransform;
 					return (state.Transform.origin - oldOrigin).Length();
 				}
 			}
-			return 0;
 		} else
 		{
 			// Found a spot to step up!
 			// Confirm that what we are stepping onto is within our max slope allowance.
-			Dictionary results;
-			Utils.TestIntersection(space, traceShape, res.newShapePos, out results, excludeList);
-			Vector3 resNormal = (Vector3)results["normal"];
+			Dictionary hitResult = new Dictionary();
+			Utils.TestIntersection(space, traceShape, finalPos, ref hitResult, ignoreThis);
+			if (hitResult.Count == 0) { return 0; } // Why?
+			Vector3 resNormal = (Vector3)hitResult["normal"];
 			float angle = GetVec3Angle(resNormal, Vector3.Up);
-
-			// Don't attempt a stepup if the angle exceeds our allowance.
 			if (angle <= maxWalkAngle)
 			{
 				var oldTransform = state.Transform;
 				Vector3 oldOrigin = oldTransform.origin;
-				oldTransform.origin = res.newShapePos;
+				oldTransform.origin = finalPos;
 				state.Transform = oldTransform;
 				return (state.Transform.origin - oldOrigin).Length();
-			} else
-			{
-				return 0;
 			}
 		}
+
+		return 0;
 	}
 
 	void CalcWishDir()
@@ -278,14 +282,13 @@ public class PlayerMovee : RigidBody
 	bool CalcWallVelSlide(ref Vector3 nextVel, PhysicsDirectBodyState state)
 	{
 		var space = GetWorld().DirectSpaceState;
-		PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
 		// Set up our initial query to overlap our real collider minus our step height.
 		CylinderShape traceShape = new CylinderShape();
-		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
+		// Apply collider margin to avoid missing detections of the wall.
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius + colliderMargin;
 		traceShape.Height = ((CylinderShape)collider.Shape).Height - maxStepHeight;
 
-		Array results = new Array();
-		Utils.TestMultiIntersection(space, traceShape, GlobalTransform.origin, new Array(this), results);
+		Array<Dictionary> results = Utils.TestMultiIntersection(space, traceShape, GlobalTransform.origin, new Array(this));
 
 		foreach (Dictionary hitResult in results)
 		{
@@ -322,7 +325,7 @@ public class PlayerMovee : RigidBody
 		CalcWallVelSlide(ref predictedNextVel, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
 		float amtMoved = AttemptStep(predictedNextVel, state);
-		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length() - amtMoved);
+		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length());
 
 		// Apply gravity after we've determined our horz trajectory.
 		if (movementStates.ContainsState(MovementStates.Air)) { ApplyGravity(state.Step); }
@@ -367,13 +370,7 @@ public class PlayerMovee : RigidBody
 		var transform = camRef.Transform;
 		transform.origin.x = this.GlobalTransform.origin.x;
 		transform.origin.z = this.GlobalTransform.origin.z;
-		if (movementStates.ContainsState(MovementStates.Ground))
-		{
-			transform.origin.y = Mathf.Lerp(transform.origin.y, this.GlobalTransform.origin.y + 1.0f, 1.5f * delta * 10);
-		} else
-		{
 			transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
-		}
 		camRef.Transform = transform;
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
@@ -392,7 +389,7 @@ public class PlayerMovee : RigidBody
 			DebugDraw.BeginTextGroup("Player Information");
 			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velocity), 0);
 			DebugDraw.SetText("Real Horz speed:", GetVec2D(velocity).Length(), 1);
-			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 2);
+			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 3);
 			DebugDraw.EndTextGroup();
 		}
 	}

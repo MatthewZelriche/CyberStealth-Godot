@@ -9,36 +9,38 @@ public struct TestMotionResults
     public Vector3 newShapePos;
 }
 
+public class TestMultiMotionResults
+{
+    public float safeMovement = 1.0f;
+    public float unsafeMovement = 1.0f;
+    public Array<Dictionary> hitResults = new Array<Dictionary>();
+}
+
 public class Utils : Node
 {
-    public static TestMotionResults TestMotion(PhysicsDirectSpaceState space, Shape collider, Vector3 startPos, Vector3 move, Array ignoreList = null) 
-    {
-        PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
-        query.SetShape(collider);
-        query.Exclude = ignoreList;
-        query.Transform = new Transform(Basis.Identity, startPos);
-        var res = space.CastMotion(query, move);
-
-
-        TestMotionResults results = new TestMotionResults();
-        results.hit = (float)res[0] == 1.0f && (float)res[1] == 1.0f;
-        results.safeMovement = (float)res[0];
-        results.unsafeMovement = (float)res[1];
-        results.newShapePos = (startPos) + (move.Normalized() * (move.Length() * (float)res[0]));
-        return results;
-    }
-
-
-    public static bool TestMultiIntersection(PhysicsDirectSpaceState space, Shape collider, Vector3 pos, Array ignoreList = null, Array results = null)
+    public static bool TestIntersection(PhysicsDirectSpaceState space, Shape collider, Vector3 pos, ref Dictionary hitResult, Array ignoreList = null)
     {
         PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
         query.SetShape(collider);
         query.Exclude = ignoreList;
         query.Transform = new Transform(Basis.Identity, pos);   // TODO: Proper basis.
-        Array res = space.IntersectShape(query);
 
-        if (results == null) { return (res.Count > 0) ? true : false; }
-        for (int i = 0; i < res.Count; i++)
+        Dictionary res = space.GetRestInfo(query);
+        if (hitResult != null) hitResult = res;
+
+        return res.Count > 0;
+    }
+
+    public static Array<Dictionary> TestMultiIntersection(PhysicsDirectSpaceState space, Shape collider, Vector3 pos, Array ignoreList = null)
+    {
+        Array<Dictionary> results = new Array<Dictionary>();
+        PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
+        query.SetShape(collider);
+        query.Exclude = ignoreList;
+        query.Transform = new Transform(Basis.Identity, pos);   // TODO: Proper basis.
+        Array intersectRes = space.IntersectShape(query);
+
+        for (int i = 0; i < intersectRes.Count; i++)
         {
             Dictionary hitResults = space.GetRestInfo(query);
             if (hitResults.Count > 0)
@@ -47,19 +49,41 @@ public class Utils : Node
                 query.Exclude.Add(hitResults["rid"]);
             }
         }
-        return (res.Count > 0) ? true : false;
+
+        return results;
     }
 
-    public static bool TestIntersection(PhysicsDirectSpaceState space, Shape collider, Vector3 pos, out Dictionary hitResult, Array ignoreList = null)
+    public static bool TestMotion(PhysicsDirectSpaceState space, Shape collider, Vector3 startPos, Vector3 move, ref Array results, Array ignoreList = null)
     {
         PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
         query.SetShape(collider);
         query.Exclude = ignoreList;
-        query.Transform = new Transform(Basis.Identity, pos);   // TODO: Proper basis.
+        query.Transform = new Transform(Basis.Identity, startPos);
+        Array motionResult = space.CastMotion(query, move);
+        if (results != null) { results = motionResult; }
+        return ((float)motionResult[0] == 1.0f) && ((float)motionResult[1] == 1.0f);
+    }
 
-        Dictionary res = space.GetRestInfo(query);
-        hitResult = res;
+    public static TestMultiMotionResults TestMultiMotion(PhysicsDirectSpaceState space, Shape collider, Vector3 startPos, Vector3 move, Array ignoreList = null)
+    {
+        TestMultiMotionResults results = new TestMultiMotionResults();
+        Array motionResults = new Array();
+        TestMotion(space, collider, startPos, move, ref motionResults, ignoreList);
+        if (motionResults.Count == 0) return results;
+        results.safeMovement = (float)motionResults[0];
+        results.unsafeMovement = (float)motionResults[1];
+        results.hitResults = TestMultiIntersection(space, collider, startPos + (move.Normalized() * move.Length() * (float)motionResults[0]), ignoreList);
+        return results;
+    }
 
-        return res.Count > 0;
+    public static float GetVec3Angle(Vector3 first, Vector3 second)
+    {
+        // TODO: Is this right?
+        return 90 - Mathf.Rad2Deg(first.Dot(second) / (first.Length() * second.Length()));
+    }
+
+    public static Vector3 ScaleVector(Vector3 vec, float scale)
+    {
+        return vec.Normalized() * (vec.Length() * scale);
     }
 }
