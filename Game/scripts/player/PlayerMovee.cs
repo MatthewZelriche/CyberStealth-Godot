@@ -3,48 +3,47 @@ using Godot.Collections;
 
 
 // Possible crouch values:
-// maxWalkSpeed = 1.5f;
+// maxSpeed = 1.5f;
 // maxAccel = 7.0f;
 // stopSpeed = 1.75f;
 
-/*
- * TODO:
- * * Investigate an air control var.
- * * Investigate smoother mouse look.
- */
-
 public class PlayerMovee : RigidBody
 {
+	const float QODOT_INVERSE_SCALE = 32.0f;
+
 	[Export]
-	// The top speed, in meters per second, that a player may initiate without movement tricks (bhopping, etc)
-	// See: sv_maxspeed = 10.0
-	private float maxWalkSpeed = 10.0f;
+	// The top speed, in units, that a player may initiate without movement tricks (bhopping, etc)
+	// See: sv_maxspeed. Default: 320 hammer units
+	private float maxSpeed = 320.0f;
 	[Export]
-	private float maxAirSpeed = 0.9375f;
+	// The top speed, in units, that a player may initiate while in the air. 
+	// Dramatically reduced to account for zero friction being applied to the player while they are in the air.
+	// Default: 30 hammer units
+	private float maxAirSpeed = 30.0f;
 	[Export]
 	// How much friction is applied to decelerating the player. A measure of how "slippery" surfaces will feel.
-	// See: sv_friction = 4.0
+	// See: sv_friction. Default: 4.0
 	private float friction = 4.0f;
 	[Export]
-	// The maximum amount a player can accelerate in a single physics step.
-	// See: sv_accelerate = 10.0
+	// A measure of how quickly a player accelerates per physics step.
+	// See: sv_accelerate. Default: 10
 	private float maxAccel = 10.0f;
 	[Export]
 	// A modifier to control how quickly the player decelerates to a stop at low speeds, in combination with friction.
-	// See: sv_stopspeed = 3.125
-	private float stopSpeed = 2.125f;
+	// See: sv_stopspeed. Default: 100
+	private float stopSpeed = 100.0f;
 	[Export]
-	// Speed of constant gravity force, in meters per second.
-	private float gravity = -25.00f;
+	// Maximum speed of gravity force, in hammer units per second.
+	private float gravity = -800.0f;
 	[Export]
-	// How much upward velocity is instantly applied to the player on jump.
-	private float jumpForce = 8.2f;
+	// How much upward velocity, in hammer units, is instantly applied to the player on jump.
+	private float jumpForce = 268.3f;
 	[Export]
-	// A limit on how steep a slope can be before a player cannot traverse it. 
-	private float maxWalkAngle = 45.0f;
+	// The maximum slope angle, in degrees, that a player may walk on without sliding off.
+	private float maxWalkAngle = 45.573f;
 	[Export]
-	// The maximum height a player can smoothly step up onto without jumping.
-	private float maxStepHeight = 0.5625f;
+	// The maximum height, in hammer units, a player can smoothly step up onto without jumping.
+	private float maxStepHeight = 18.0f;
 
 	[Export]
 	private float horzSens = 0.4f;
@@ -78,8 +77,16 @@ public class PlayerMovee : RigidBody
 
 		camRef = GetNode<Camera>("Camera");
 		camRef.SetAsToplevel(true);
-		maxAccel = maxAccel * maxWalkSpeed;
 		colliderMargin = collider.Shape.Margin;
+
+
+		maxSpeed /= QODOT_INVERSE_SCALE;
+		maxAirSpeed /= QODOT_INVERSE_SCALE;
+		stopSpeed /= QODOT_INVERSE_SCALE;
+		gravity /= QODOT_INVERSE_SCALE;
+		jumpForce /= QODOT_INVERSE_SCALE;
+		maxStepHeight /= QODOT_INVERSE_SCALE;
+		maxAccel *= maxSpeed;
 	}
 
 	internal bool TestGround(PhysicsDirectBodyState state)
@@ -101,7 +108,7 @@ public class PlayerMovee : RigidBody
 	{
 		if (movementStates.ContainsState(MovementStates.Walk))
 		{
-			return maxWalkSpeed;
+			return maxSpeed;
 		} else if (movementStates.ContainsState(MovementStates.Air))
 		{
 			return maxAirSpeed;
@@ -112,7 +119,9 @@ public class PlayerMovee : RigidBody
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
+		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
+
 		bool wasAirborneLastFrame = movementStates.ContainsState(MovementStates.Air);
 		if (TestGround(state))
 		{
@@ -175,8 +184,6 @@ public class PlayerMovee : RigidBody
 		Vector3 maxForwardPos = maxUpPos + Utils.ScaleVector(forwardMotion, (float)results[0]);
 		results.Clear();
 
-		// Reduce the shape's radius very slightly to avoid detecting walls the player is rubbing up against.
-		traceShape.Radius = ((CylinderShape)collider.Shape).Radius;
 		Utils.TestMotion(space, traceShape, maxForwardPos, Vector3.Down * (maxStepHeight - missingTraverseAmount), ref results, ignoreThis);
 		Vector3 finalPos = maxForwardPos + Utils.ScaleVector(Vector3.Down * (maxStepHeight - missingTraverseAmount), (float)results[0]);
 
@@ -194,7 +201,7 @@ public class PlayerMovee : RigidBody
 				// Confirm that what we are stepping onto is within our max slope allowance.
 				Dictionary hitResult = new Dictionary();
 				Utils.TestIntersection(space, traceShape, finalPos, ref hitResult, ignoreThis);
-				if (hitResult.Count == 0) { return 0; } // Why?
+				if (hitResult.Count == 0) { return 0; }
 				Vector3 resNormal = (Vector3)hitResult["normal"];
 				float angle = GetVec3Angle(resNormal, Vector3.Up);
 				if (angle <= maxWalkAngle)
@@ -212,7 +219,7 @@ public class PlayerMovee : RigidBody
 			// Confirm that what we are stepping onto is within our max slope allowance.
 			Dictionary hitResult = new Dictionary();
 			Utils.TestIntersection(space, traceShape, finalPos, ref hitResult, ignoreThis);
-			if (hitResult.Count == 0) { return 0; } // Why?
+			if (hitResult.Count == 0) { return 0; }
 			Vector3 resNormal = (Vector3)hitResult["normal"];
 			float angle = GetVec3Angle(resNormal, Vector3.Up);
 			if (angle <= maxWalkAngle)
@@ -422,12 +429,10 @@ public class PlayerMovee : RigidBody
 
 	protected virtual void OnPlayerJumpApex()
 	{
-		GD.Print("Jump apex!");
 	}
 
 	protected virtual void OnPlayerBeginFalling()
 	{
-		GD.Print("Begin falling!");
 	}
 
 	Vector3 GetVec2D(Vector3 inVec)
@@ -437,7 +442,6 @@ public class PlayerMovee : RigidBody
 
 	float GetVec3Angle(Vector3 first, Vector3 second)
 	{
-		// TODO: Is this right?
 		return 90 - Mathf.Rad2Deg(first.Dot(second) / (first.Length() * second.Length()));
 	}
 }
