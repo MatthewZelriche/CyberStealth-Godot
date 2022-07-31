@@ -265,9 +265,10 @@ public class PlayerMovee : RigidBody
 		if (movementStates.GetCurrentState() == MovementStates.Landed) { movementStates.PopState(); return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
-		if (lastSpeed <= 0.08f)
+		if (lastSpeed <= 0.03f)
 		{
 			velocity = Vector3.Zero;
+			return;
 		}
 		if (lastSpeed != 0)
 		{
@@ -275,6 +276,14 @@ public class PlayerMovee : RigidBody
 			float finalStopSpeedScale = Mathf.Max(stopSpeed, lastSpeed);
 			Vector3 decelAmount = GetVec2D(velocity).Normalized() * friction * finalStopSpeedScale;
 			velocity -= decelAmount * physDelta;
+
+			// Fix for jittery back-and-forward velocity changes just before stopping.
+			var signedDecel = decelAmount.Sign();
+			var signedVel = velocity.Sign();
+			if (!(Mathf.IsEqualApprox(signedDecel.x, signedVel.x) && Mathf.IsEqualApprox(signedDecel.z, signedVel.z)))
+            {
+				velocity = Vector3.Zero; return;
+			}
 		}
 	}
 
