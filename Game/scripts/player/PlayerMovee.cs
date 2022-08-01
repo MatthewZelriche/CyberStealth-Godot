@@ -3,9 +3,10 @@ using Godot.Collections;
 
 
 // Possible crouch values:
-// maxSpeed = 1.5f;
-// maxAccel = 7.0f;
-// stopSpeed = 1.75f;
+// maxSpeed = 50;
+// maxAccel = 8.0f;
+// stopSpeed = 55;
+// edgeFrictionMult = 1.0
 
 public class PlayerMovee : RigidBody
 {
@@ -24,6 +25,11 @@ public class PlayerMovee : RigidBody
 	// How much friction is applied to decelerating the player. A measure of how "slippery" surfaces will feel.
 	// See: sv_friction. Default: 4.0
 	private float friction = 4.0f;
+	[Export]
+	// How much the friction should be multiplied by when the player is near a steep ledge.
+	// A value of 1.0 disables edge friction.
+	// Default: 2.0;
+	private float edgeFrictionMult = 2.0f;
 	[Export]
 	// A measure of how quickly a player accelerates per physics step.
 	// See: sv_accelerate. Default: 10
@@ -59,6 +65,7 @@ public class PlayerMovee : RigidBody
 	private Camera camRef;
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
+	private float currentEdgeFriction = 0.0f;
 
 	private float colliderMargin;
 
@@ -266,6 +273,22 @@ public class PlayerMovee : RigidBody
 		wishDir = wishDir.Normalized();
 	}
 
+	bool ShouldApplyEdgeFriction(float physDelta)
+    {
+		if (movementStates.ContainsState(MovementStates.Air)) { return false; }
+		
+		var space = GetWorld().DirectSpaceState;
+		Vector3 traceBeginPos = GlobalTransform.origin + velocity.Normalized() * ((CylinderShape)collider.Shape).Radius;
+		traceBeginPos = traceBeginPos + Vector3.Down * ((CylinderShape)collider.Shape).Height / 2;
+		DebugDraw.DrawCylinder(traceBeginPos, ((CylinderShape)collider.Shape).Radius, 2.0f);
+		Array throwaway = new Array();
+		Dictionary throwawayDictionary = new Dictionary();
+		Array excludeThis = new Array(this);
+
+		if (Utils.TestIntersection(space, collider.Shape, traceBeginPos, ref throwawayDictionary, excludeThis)) { return false; }
+		return Utils.TestMotion(space, collider.Shape, traceBeginPos, traceBeginPos + Vector3.Down * ((CylinderShape)collider.Shape).Height / 2, ref throwaway, excludeThis);
+    }
+
 	void ApplyFriction(float physDelta)
 	{
 		// Ensure there exists a single frame after landing where we do not apply friction.
@@ -281,7 +304,7 @@ public class PlayerMovee : RigidBody
 		{
 			// stopspeed only scales decel at low speeds.
 			float finalStopSpeedScale = Mathf.Max(stopSpeed, lastSpeed);
-			Vector3 decelAmount = GetVec2D(velocity).Normalized() * friction * finalStopSpeedScale;
+			Vector3 decelAmount = GetVec2D(velocity).Normalized() * friction * currentEdgeFriction * finalStopSpeedScale;
 			velocity -= decelAmount * physDelta;
 
 			// Fix for jittery back-and-forward velocity changes just before stopping.
@@ -328,6 +351,7 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
+		if (ShouldApplyEdgeFriction(state.Step)) { currentEdgeFriction = edgeFrictionMult; } else { currentEdgeFriction = 1.0f; }
 		if (movementStates.ContainsState(MovementStates.Ground)) { ApplyFriction(state.Step); }
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
