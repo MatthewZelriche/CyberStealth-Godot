@@ -22,7 +22,7 @@ public class Utils : Node
     {
         PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
         query.SetShape(collider);
-        query.Exclude = ignoreList;
+        if (ignoreList != null) query.Exclude = ignoreList;
         query.Transform = new Transform(Basis.Identity, pos);   // TODO: Proper basis.
 
         Dictionary res = space.GetRestInfo(query);
@@ -36,7 +36,7 @@ public class Utils : Node
         Array<Dictionary> results = new Array<Dictionary>();
         PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
         query.SetShape(collider);
-        query.Exclude = ignoreList;
+        if (ignoreList != null) query.Exclude = ignoreList;
         query.Transform = new Transform(Basis.Identity, pos);   // TODO: Proper basis.
         Array intersectRes = space.IntersectShape(query);
 
@@ -57,7 +57,7 @@ public class Utils : Node
     {
         PhysicsShapeQueryParameters query = new PhysicsShapeQueryParameters();
         query.SetShape(collider);
-        query.Exclude = ignoreList;
+        if (ignoreList != null) query.Exclude = ignoreList;
         query.Transform = new Transform(Basis.Identity, startPos);
         Array motionResult = space.CastMotion(query, move);
         if (results != null) { results = motionResult; }
