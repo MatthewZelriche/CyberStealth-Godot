@@ -1,6 +1,6 @@
 using Godot;
 using Godot.Collections;
-
+using Hsm;
 
 // Possible crouch values:
 // maxSpeed = 50;
@@ -15,7 +15,7 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// The top speed, in units, that a player may initiate without movement tricks (bhopping, etc)
 	// See: sv_maxspeed. Default: 320 hammer units
-	private float maxSpeed = 320.0f;
+	private float maxWalkSpeed = 320.0f;
 	[Export]
 	// The top speed, in units, that a player may initiate while in the air. 
 	// Dramatically reduced to account for zero friction being applied to the player while they are in the air.
@@ -58,8 +58,9 @@ public class PlayerMovee : RigidBody
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
-	bool autojump = false;
+	bool autojump = true;
 
+	private float currentMaxSpeed;
 	private Vector3 velocity;
 	private Vector3 wishDir;
 	private Camera camRef;
@@ -70,13 +71,15 @@ public class PlayerMovee : RigidBody
 	private float colliderMargin;
 
 	CollisionShape collider;
+	PhysicsDirectBodyState physBodyState;
+	bool noFrictionThisFrame = false;
 	StateMachine movementStates;
-
+	
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
 		movementStates = new StateMachine();
-		movementStates.PushState(MovementStates.Ground);
+		movementStates.Init<Ground>(this);
 
 		collider = GetNode<CollisionShape>("CollisionShape");
 		GetNode<Spatial>("ForwardHint").Visible = false;
@@ -85,15 +88,16 @@ public class PlayerMovee : RigidBody
 		camRef = GetNode<Camera>("Camera");
 		camRef.SetAsToplevel(true);
 		colliderMargin = collider.Shape.Margin;
+		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
 
 
-		maxSpeed /= QODOT_INVERSE_SCALE;
+		maxWalkSpeed /= QODOT_INVERSE_SCALE;
 		maxAirSpeed /= QODOT_INVERSE_SCALE;
 		stopSpeed /= QODOT_INVERSE_SCALE;
 		gravity /= QODOT_INVERSE_SCALE;
 		jumpForce /= QODOT_INVERSE_SCALE;
 		maxStepHeight /= QODOT_INVERSE_SCALE;
-		maxAccel *= maxSpeed;
+		maxAccel *= maxWalkSpeed;
 	}
 
 	internal bool TestGround(PhysicsDirectBodyState state)
@@ -111,54 +115,14 @@ public class PlayerMovee : RigidBody
 		return false;
 	}
 
-	float CalcMaxSpeed()
-	{
-		if (movementStates.ContainsState(MovementStates.Walk))
-		{
-			return maxSpeed;
-		} else if (movementStates.ContainsState(MovementStates.Air))
-		{
-			return maxAirSpeed;
-		}
-
-		return 0;
-	}
-
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
+		bool wasAirborneLastFrame = movementStates.IsInState<Air>();
+		movementStates.ProcessStateTransitions();
+		movementStates.UpdateStates(state.Step);
+
 		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
-
-		bool wasAirborneLastFrame = movementStates.ContainsState(MovementStates.Air);
-		if (TestGround(state))
-		{
-			movementStates.RemoveHierarchy(MovementStates.Air);
-			movementStates.PushState(MovementStates.Ground);
-			movementStates.PushState(MovementStates.Walk);
-		} else
-		{
-			movementStates.RemoveHierarchy(MovementStates.Ground);
-			movementStates.PushState(MovementStates.Air);
-		}
-
-		if (movementStates.ContainsState(MovementStates.Air) && (velocity.y < 0))
-		{
-			if (movementStates.ContainsState(MovementStates.Jump) && !movementStates.ContainsState(MovementStates.Fall))
-			{
-				OnPlayerJumpApex();
-			}
-			if (!movementStates.ContainsState(MovementStates.Fall))
-			{
-				OnPlayerBeginFalling();
-			}
-			movementStates.PushState(MovementStates.Fall);
-		}
-
-		// Did we land this frame?
-		if (wasAirborneLastFrame && movementStates.ContainsState(MovementStates.Ground))
-		{
-			OnPlayerLanded();
-		}
 
 		CalcWishDir();
 		// While we calculate velocity every frame for internal use, 
@@ -198,7 +162,7 @@ public class PlayerMovee : RigidBody
 		{
 			results.Clear();
 			// Didn't find a place to step...
-			if (movementStates.ContainsState(MovementStates.Air)) { return 0; }
+			if (movementStates.IsInState<Air>()) return 0;
 			// Attempt to step down
 			Utils.TestMotion(space, traceShape, finalPos, Vector3.Down * maxStepHeight, ref results, ignoreThis);
 			finalPos = finalPos + Utils.ScaleVector(Vector3.Down * maxStepHeight, (float)results[0]);
@@ -239,7 +203,7 @@ public class PlayerMovee : RigidBody
 			} else
 			{
 				// Hack to (mostly) prevent bumping up and down steep slopes. Doesn't work all the time (why?)
-				if (movementStates.ContainsState(MovementStates.Ground)) { AxisLockLinearY = true; }
+				if (movementStates.IsInState<Ground>()) AxisLockLinearY = true;
 			}
 		}
 
@@ -275,7 +239,7 @@ public class PlayerMovee : RigidBody
 
 	bool ShouldApplyEdgeFriction(float physDelta)
     {
-		if (movementStates.ContainsState(MovementStates.Air)) { return false; }
+		if (movementStates.IsInState<Air>()) return false;
 		
 		var space = GetWorld().DirectSpaceState;
 		Vector3 traceBeginPos = GlobalTransform.origin + velocity.Normalized() * ((CylinderShape)collider.Shape).Radius;
@@ -292,7 +256,7 @@ public class PlayerMovee : RigidBody
 	void ApplyFriction(float physDelta)
 	{
 		// Ensure there exists a single frame after landing where we do not apply friction.
-		if (movementStates.GetCurrentState() == MovementStates.Landed) { movementStates.PopState(); return; }
+		if (noFrictionThisFrame) {  noFrictionThisFrame = false; return; }
 		float lastSpeed = GetVec2D(velocity).Length();
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.03f)
@@ -353,14 +317,15 @@ public class PlayerMovee : RigidBody
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
 		if (ShouldApplyEdgeFriction(state.Step)) { currentEdgeFriction = edgeFrictionMult; } else { currentEdgeFriction = 1.0f; }
-		if (movementStates.ContainsState(MovementStates.Ground)) { ApplyFriction(state.Step); }
+		if (movementStates.IsInState<Ground>()) ApplyFriction(state.Step);
+
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
 		float curSpeed = velocity.Dot(wishDir);
 
 		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
-		float maxSpeed = CalcMaxSpeed();
+		float maxSpeed = currentMaxSpeed;
 		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
 		// Increase our vel based on addSpeed in the wishdir.
@@ -373,7 +338,7 @@ public class PlayerMovee : RigidBody
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length());
 
 		// Apply gravity after we've determined our horz trajectory.
-		if (movementStates.ContainsState(MovementStates.Air)) { ApplyGravity(state.Step); }
+		if (movementStates.IsInState<Air>()) ApplyGravity(state.Step);
 
 		// Return whether we should actually post this velocity to the physics server (if we didn't manually teleport the player.
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
@@ -405,11 +370,6 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
-		bool jumpPress = autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
-		if (jumpPress && movementStates.ContainsState(MovementStates.Ground))
-		{
-			OnBeginJump();
-		}
 
 		// Update cam pos with player.
 		var transform = camRef.Transform;
@@ -434,22 +394,19 @@ public class PlayerMovee : RigidBody
 			DebugDraw.BeginTextGroup("Player Information");
 			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velocity), 0);
 			DebugDraw.SetText("Real Horz speed:", GetVec2D(velocity).Length(), 1);
-			DebugDraw.SetText("Movement State Stack:", movementStates.ToString(), 3);
+			DebugDraw.SetText("Movement State Stack:", movementStates.GetStateStackAsString(), 3);
 			DebugDraw.EndTextGroup();
 		}
 	}
 
 	protected virtual void OnPlayerLanded()
 	{
-		movementStates.PushState(MovementStates.Landed);
+		noFrictionThisFrame = true;
 		velocity.y = 0;
 	}
 	protected virtual void OnBeginJump()
 	{
 		velocity.y += jumpForce;
-		movementStates.RemoveHierarchy(MovementStates.Ground);
-		movementStates.PushState(MovementStates.Air);
-		movementStates.PushState(MovementStates.Jump);
 	}
 
 	protected virtual void OnPlayerJumpApex()
@@ -468,5 +425,81 @@ public class PlayerMovee : RigidBody
 	float GetVec3Angle(Vector3 first, Vector3 second)
 	{
 		return 90 - Mathf.Rad2Deg(first.Dot(second) / (first.Length() * second.Length()));
+	}
+
+	// Movement States
+	class Ground : StateWithOwner<PlayerMovee>
+    {
+		public override Transition GetTransition()
+        {
+			if (!Owner.TestGround(Owner.physBodyState))
+			{
+				return Transition.Sibling<Air>();
+			}
+
+			return Transition.InnerEntry<Walk>();
+        }
+
+        public override void Update(float aDeltaTime)
+        {
+			bool didRequestJump = Owner.autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
+			if (didRequestJump)
+			{
+				Owner.OnBeginJump();
+			}
+		}
+    }
+
+	class Air : StateWithOwner<PlayerMovee>
+	{
+		public override Transition GetTransition()
+		{
+			if (Owner.TestGround(Owner.physBodyState))
+			{
+				Owner.OnPlayerLanded();
+				return Transition.Sibling<Ground>();
+			}
+			if (Owner.velocity.y > 0)
+			{
+				return Transition.InnerEntry<Jump>();
+			}
+			return Transition.InnerEntry<Fall>();
+		}
+
+		public override void OnEnter()
+		{
+			Owner.currentMaxSpeed = Owner.maxAirSpeed;
+		}
+	}
+
+	class Walk : StateWithOwner<PlayerMovee>
+    {
+		public override void OnEnter()
+        {
+			Owner.currentMaxSpeed = Owner.maxWalkSpeed;
+        }
+    }
+
+	class Jump : StateWithOwner<PlayerMovee>
+    {
+        public override Transition GetTransition()
+        {
+			if (Owner.velocity.y < 0) { return Transition.InnerEntry<Fall>(); }
+
+			return Transition.None();
+        }
+	}
+
+	class Fall : StateWithOwner<PlayerMovee>
+	{	
+		public override Transition GetTransition()
+        {
+			return Transition.None();
+        }
+		public override void OnEnter()
+		{
+			if (Owner.movementStates.IsInState<Jump>()) { Owner.OnPlayerJumpApex(); }
+			Owner.OnPlayerBeginFalling();
+		}
 	}
 }
