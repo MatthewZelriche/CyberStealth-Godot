@@ -51,11 +51,6 @@ public class PlayerMovee : RigidBody
 	// The maximum height, in hammer units, a player can smoothly step up onto without jumping.
 	private float maxStepHeight = 18.0f;
 
-	[Export]
-	private float horzSens = 0.4f;
-	[Export]
-	private float vertSens = 0.4f;
-
 	// TODO: Expose to console.
 	bool drawDebug = true;
 	bool autojump = true;
@@ -63,9 +58,7 @@ public class PlayerMovee : RigidBody
 	private float currentMaxSpeed;
 	private Vector3 velocity;
 	private Vector3 wishDir;
-	private Camera camRef;
-	private float pitch = 0.0f;
-	private float yaw = 0.0f;
+	private CameraController camRef;
 	private float currentEdgeFriction = 0.0f;
 
 	private float colliderMargin;
@@ -85,8 +78,7 @@ public class PlayerMovee : RigidBody
 		GetNode<Spatial>("ForwardHint").Visible = false;
 		Input.SetMouseMode(Input.MouseMode.Captured);
 
-		camRef = GetNode<Camera>("Camera");
-		camRef.SetAsToplevel(true);
+		camRef = GetNode<CameraController>("Camera");
 		colliderMargin = collider.Shape.Margin;
 		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
 
@@ -214,8 +206,8 @@ public class PlayerMovee : RigidBody
 	{
 		wishDir = new Vector3();
 		// Ignore Y dir of basis vectors so that camera pitch doesn't cause player to move up or down by looking.
-		Vector3 forward2D = new Vector3(camRef.GlobalTransform.basis.z.x, 0, camRef.GlobalTransform.basis.z.z);
-		Vector3 right2D = new Vector3(camRef.GlobalTransform.basis.x.x, 0, camRef.GlobalTransform.basis.x.z);
+		Vector3 forward2D = GetVec2D(camRef.GetForwardVector());
+		Vector3 right2D = GetVec2D(camRef.GetRightVector());
 
 		if (Input.IsActionPressed("move_forward"))
 		{
@@ -238,7 +230,7 @@ public class PlayerMovee : RigidBody
 	}
 
 	bool ShouldApplyEdgeFriction(float physDelta)
-    {
+	{
 		if (movementStates.IsInState<Air>()) return false;
 		
 		var space = GetWorld().DirectSpaceState;
@@ -251,7 +243,7 @@ public class PlayerMovee : RigidBody
 
 		if (Utils.TestIntersection(space, collider.Shape, traceBeginPos, ref throwawayDictionary, excludeThis)) { return false; }
 		return Utils.TestMotion(space, collider.Shape, traceBeginPos, traceBeginPos + Vector3.Down * ((CylinderShape)collider.Shape).Height / 2, ref throwaway, excludeThis);
-    }
+	}
 
 	void ApplyFriction(float physDelta)
 	{
@@ -276,7 +268,7 @@ public class PlayerMovee : RigidBody
 			var signedDecel = decelAmount.Sign();
 			var signedVel = velocity.Sign();
 			if (!(Mathf.IsEqualApprox(signedDecel.x, signedVel.x) && Mathf.IsEqualApprox(signedDecel.z, signedVel.z)))
-            {
+			{
 				velocity = Vector3.Zero; return;
 			}
 		}
@@ -343,40 +335,11 @@ public class PlayerMovee : RigidBody
 		// Return whether we should actually post this velocity to the physics server (if we didn't manually teleport the player.
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
 	}
-	
-	public override void _Input(InputEvent @event)
-	{
-		if (@event is InputEventMouseMotion motionEvent)
-		{
-			pitch -= motionEvent.Relative.y * horzSens;
-			yaw -= motionEvent.Relative.x * vertSens;
-
-			// Clamp camera to avoid flipping
-			if (pitch >= 89.0f)
-			{
-				pitch = 89.0f;
-			}
-			if (pitch <= -89.0f)
-			{
-				pitch = -89.0f;
-			}
-
-			Vector3 cameraRotDeg = camRef.RotationDegrees;
-			cameraRotDeg.y = yaw;
-			cameraRotDeg.x = pitch;
-			camRef.RotationDegrees = cameraRotDeg;
-		}
-	}
 
 	public override void _Process(float delta)
 	{
-
 		// Update cam pos with player.
-		var transform = camRef.Transform;
-		transform.origin.x = this.GlobalTransform.origin.x;
-		transform.origin.z = this.GlobalTransform.origin.z;
-		transform.origin.y = this.GlobalTransform.origin.y + 1.0f;
-		camRef.Transform = transform;
+		camRef.SetWorldPosition(this.GlobalTransform.origin.x, this.GlobalTransform.origin.y + 1.0f, this.GlobalTransform.origin.z);
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{
@@ -429,26 +392,26 @@ public class PlayerMovee : RigidBody
 
 	// Movement States
 	class Ground : StateWithOwner<PlayerMovee>
-    {
+	{
 		public override Transition GetTransition()
-        {
+		{
 			if (!Owner.TestGround(Owner.physBodyState))
 			{
 				return Transition.Sibling<Air>();
 			}
 
 			return Transition.InnerEntry<Walk>();
-        }
+		}
 
-        public override void Update(float aDeltaTime)
-        {
+		public override void Update(float aDeltaTime)
+		{
 			bool didRequestJump = Owner.autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
 			if (didRequestJump)
 			{
 				Owner.OnBeginJump();
 			}
 		}
-    }
+	}
 
 	class Air : StateWithOwner<PlayerMovee>
 	{
@@ -473,29 +436,29 @@ public class PlayerMovee : RigidBody
 	}
 
 	class Walk : StateWithOwner<PlayerMovee>
-    {
+	{
 		public override void OnEnter()
-        {
+		{
 			Owner.currentMaxSpeed = Owner.maxWalkSpeed;
-        }
-    }
+		}
+	}
 
 	class Jump : StateWithOwner<PlayerMovee>
-    {
-        public override Transition GetTransition()
-        {
+	{
+		public override Transition GetTransition()
+		{
 			if (Owner.velocity.y < 0) { return Transition.InnerEntry<Fall>(); }
 
 			return Transition.None();
-        }
+		}
 	}
 
 	class Fall : StateWithOwner<PlayerMovee>
 	{	
 		public override Transition GetTransition()
-        {
+		{
 			return Transition.None();
-        }
+		}
 		public override void OnEnter()
 		{
 			if (Owner.movementStates.IsInState<Jump>()) { Owner.OnPlayerJumpApex(); }
