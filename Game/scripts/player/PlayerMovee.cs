@@ -297,7 +297,8 @@ public class PlayerMovee : RigidBody
 		// Zero out small float values to ensure we come to a complete stop.
 		if (lastSpeed <= 0.03f)
 		{
-			velocity = Vector3.Zero;
+			velocity.x = 0;
+			velocity.z = 0;
 			return;
 		}
 		if (lastSpeed != 0)
