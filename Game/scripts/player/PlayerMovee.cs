@@ -8,6 +8,11 @@ using Hsm;
 // stopSpeed = 55;
 // edgeFrictionMult = 1.0
 
+
+// TODO:
+// * Occasional bug where player receives too much vertical velocity from jumping. Possibly OnBeginJump() being called twice?
+// * Edge friction may not be working, possibly only in crouch state. Investigate.
+
 public class PlayerMovee : RigidBody
 {
 	const float QODOT_INVERSE_SCALE = 32.0f;
@@ -16,6 +21,11 @@ public class PlayerMovee : RigidBody
 	// The top speed, in units, that a player may initiate without movement tricks (bhopping, etc)
 	// See: sv_maxspeed. Default: 320 hammer units
 	private float maxWalkSpeed = 320.0f;
+	// The top speed, in hammer units, that a player may initiate while crouched.
+	// See: https://www.jwchong.com/hl/duckjump.html May not be entirely accurate because HL1 uses cl_Forwardspeed
+	// in this calculation, which I do not. But the rationale is 400 * 0.333 = 133.2.
+	[Export]
+	private float maxCrouchSpeed = 133.2f;
 	[Export]
 	// The top speed, in units, that a player may initiate while in the air. 
 	// Dramatically reduced to account for zero friction being applied to the player while they are in the air.
@@ -97,6 +107,7 @@ public class PlayerMovee : RigidBody
 
 
 		maxWalkSpeed /= QODOT_INVERSE_SCALE;
+		maxCrouchSpeed /= QODOT_INVERSE_SCALE;
 		maxAirSpeed /= QODOT_INVERSE_SCALE;
 		stopSpeed /= QODOT_INVERSE_SCALE;
 		gravity /= QODOT_INVERSE_SCALE;
@@ -492,7 +503,7 @@ public class PlayerMovee : RigidBody
 			if (timer.TimeLeft <= 0) { return Transition.Sibling<Crouch>(); }
 			if (Input.IsActionJustPressed("Crouch") && !firstFrame)
 			{
-				return Transition.Sibling<CrouchOut>();
+				return Transition.Sibling<CrouchOut>(false);
 			}
 			
 			return Transition.None();
@@ -502,6 +513,7 @@ public class PlayerMovee : RigidBody
 		{
 			timer = Owner.GetTree().CreateTimer(Owner.CrouchTime);
 			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
+			Owner.currentMaxGroundSpeed = Owner.maxCrouchSpeed;
 		}
 
 		public override void Update(float aDeltaTime)
@@ -537,10 +549,13 @@ public class PlayerMovee : RigidBody
 			}
 			return Transition.None();
 		}
-		public override void OnEnter()
+		public override void OnEnter(object[] aArgs)
 		{
+			// TODO: Sprinting
+			bool sprintTransition = (bool)aArgs[0];
 			timer = Owner.GetTree().CreateTimer(Owner.UncrouchTime);
 			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
+			Owner.currentMaxGroundSpeed = Owner.maxWalkSpeed;
 		}
 
 		public override void Update(float aDeltaTime)
