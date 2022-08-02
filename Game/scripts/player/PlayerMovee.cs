@@ -319,7 +319,6 @@ public class PlayerMovee : RigidBody
 		if (ShouldApplyEdgeFriction(state.Step)) { currentEdgeFriction = edgeFrictionMult; } else { currentEdgeFriction = 1.0f; }
 		if (groundedStates.IsInState<Ground>()) ApplyFriction(state.Step);
 
-
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
 		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
 		float curSpeed = velocity.Dot(wishDir);
@@ -505,9 +504,12 @@ public class PlayerMovee : RigidBody
 			float deltaHeightChange = Mathf.Abs(((CylinderShape)Owner.collider.Shape).Height - ass);
 			((CylinderShape)Owner.collider.Shape).Height = ass;
 
-			Transform colliderTransform = Owner.GlobalTransform;
-			colliderTransform.origin.y -= deltaHeightChange/2;
-			Owner.GlobalTransform = colliderTransform;
+			// When grounded, "snap" the player to the ground so that they aren't repeatedly "Falling" each time
+			// we decrease the collider size.
+			if (Owner.groundedStates.IsInState<Air>())
+			{
+				Owner.velocity.y -= deltaHeightChange / 2;
+			}
 			
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
 		}
