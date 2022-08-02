@@ -50,12 +50,16 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// The maximum height, in hammer units, a player can smoothly step up onto without jumping.
 	private float maxStepHeight = 18.0f;
+	[Export]
+	// The height, in hammer units, of the player's collider while they are in the crouch state.
+	// Default: 36.0
+	private float CrouchHeight = 36.0f;
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
 	bool autojump = true;
 
-	private float currentMaxSpeed;
+	private float currentMaxGroundSpeed;
 	private Vector3 velocity;
 	private Vector3 wishDir;
 	private CameraController camRef;
@@ -67,19 +71,22 @@ public class PlayerMovee : RigidBody
 	PhysicsDirectBodyState physBodyState;
 	bool noFrictionThisFrame = false;
 	StateMachine movementStates;
+	StateMachine groundedStates;
 	
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
 		movementStates = new StateMachine();
-		movementStates.Init<Ground>(this);
+		groundedStates = new StateMachine();
+		movementStates.Init<Walk>(this);
+		groundedStates.Init<Air>(this);
 
 		collider = GetNode<CollisionShape>("CollisionShape");
 		GetNode<Spatial>("ForwardHint").Visible = false;
 		Input.SetMouseMode(Input.MouseMode.Captured);
 
 		camRef = GetNode<CameraController>("Camera");
-		camRef.SetEyePos(camRef.StandingEyeHeight - ((CylinderShape)collider.Shape).Height/2);
+		camRef.SetEyePos(0 - ((CylinderShape)collider.Shape).Height / 2 + ((CylinderShape)collider.Shape).Height - camRef.EyeHeightDistanceFromTop);
 
 		colliderMargin = collider.Shape.Margin;
 		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
@@ -91,6 +98,7 @@ public class PlayerMovee : RigidBody
 		gravity /= QODOT_INVERSE_SCALE;
 		jumpForce /= QODOT_INVERSE_SCALE;
 		maxStepHeight /= QODOT_INVERSE_SCALE;
+		CrouchHeight /= QODOT_INVERSE_SCALE;
 		maxAccel *= maxWalkSpeed;
 	}
 
@@ -111,9 +119,8 @@ public class PlayerMovee : RigidBody
 
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
-		bool wasAirborneLastFrame = movementStates.IsInState<Air>();
 		movementStates.ProcessStateTransitions();
-		movementStates.UpdateStates(state.Step);
+		groundedStates.ProcessStateTransitions();
 
 		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
@@ -156,7 +163,7 @@ public class PlayerMovee : RigidBody
 		{
 			results.Clear();
 			// Didn't find a place to step...
-			if (movementStates.IsInState<Air>()) return 0;
+			if (groundedStates.IsInState<Air>()) return 0;
 			// Attempt to step down
 			Utils.TestMotion(space, traceShape, finalPos, Vector3.Down * maxStepHeight, ref results, ignoreThis);
 			finalPos = finalPos + Utils.ScaleVector(Vector3.Down * maxStepHeight, (float)results[0]);
@@ -197,7 +204,7 @@ public class PlayerMovee : RigidBody
 			} else
 			{
 				// Hack to (mostly) prevent bumping up and down steep slopes. Doesn't work all the time (why?)
-				if (movementStates.IsInState<Ground>()) AxisLockLinearY = true;
+				if (groundedStates.IsInState<Ground>()) AxisLockLinearY = true;
 			}
 		}
 
@@ -233,7 +240,7 @@ public class PlayerMovee : RigidBody
 
 	bool ShouldApplyEdgeFriction(float physDelta)
 	{
-		if (movementStates.IsInState<Air>()) return false;
+		if (groundedStates.IsInState<Air>()) return false;
 		
 		var space = GetWorld().DirectSpaceState;
 		Vector3 traceBeginPos = GlobalTransform.origin + velocity.Normalized() * ((CylinderShape)collider.Shape).Radius;
@@ -310,7 +317,7 @@ public class PlayerMovee : RigidBody
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
 		if (ShouldApplyEdgeFriction(state.Step)) { currentEdgeFriction = edgeFrictionMult; } else { currentEdgeFriction = 1.0f; }
-		if (movementStates.IsInState<Ground>()) ApplyFriction(state.Step);
+		if (groundedStates.IsInState<Ground>()) ApplyFriction(state.Step);
 
 
 		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
@@ -318,7 +325,7 @@ public class PlayerMovee : RigidBody
 		float curSpeed = velocity.Dot(wishDir);
 
 		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
-		float maxSpeed = currentMaxSpeed;
+		float maxSpeed = groundedStates.IsInState<Ground>() ? currentMaxGroundSpeed : maxAirSpeed;
 		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
 
 		// Increase our vel based on addSpeed in the wishdir.
@@ -331,7 +338,7 @@ public class PlayerMovee : RigidBody
 		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length());
 
 		// Apply gravity after we've determined our horz trajectory.
-		if (movementStates.IsInState<Air>()) ApplyGravity(state.Step);
+		if (groundedStates.IsInState<Air>()) ApplyGravity(state.Step);
 
 		// Return whether we should actually post this velocity to the physics server (if we didn't manually teleport the player.
 		return Mathf.IsZeroApprox(amtMoved) ? true : false;
@@ -339,6 +346,8 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
+		movementStates.UpdateStates(delta);
+		groundedStates.UpdateStates(delta);
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{
@@ -357,6 +366,7 @@ public class PlayerMovee : RigidBody
 			DebugDraw.SetText("Real Horz Velocity:", GetVec2D(velocity), 0);
 			DebugDraw.SetText("Real Horz speed:", GetVec2D(velocity).Length(), 1);
 			DebugDraw.SetText("Movement State Stack:", movementStates.GetStateStackAsString(), 3);
+			DebugDraw.SetText("Grounded State Stack:", groundedStates.GetStateStackAsString(), 4);
 			DebugDraw.EndTextGroup();
 		}
 	}
@@ -399,7 +409,7 @@ public class PlayerMovee : RigidBody
 				return Transition.Sibling<Air>();
 			}
 
-			return Transition.InnerEntry<Walk>();
+			return Transition.None();
 		}
 
 		public override void Update(float aDeltaTime)
@@ -427,26 +437,14 @@ public class PlayerMovee : RigidBody
 			}
 			return Transition.InnerEntry<Fall>();
 		}
-
-		public override void OnEnter()
-		{
-			Owner.currentMaxSpeed = Owner.maxAirSpeed;
-		}
-	}
-
-	class Walk : StateWithOwner<PlayerMovee>
-	{
-		public override void OnEnter()
-		{
-			Owner.currentMaxSpeed = Owner.maxWalkSpeed;
-		}
 	}
 
 	class Jump : StateWithOwner<PlayerMovee>
-	{
+	{ 
 		public override Transition GetTransition()
-		{
+		{ 	
 			if (Owner.velocity.y < 0) { return Transition.InnerEntry<Fall>(); }
+			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
 
 			return Transition.None();
 		}
@@ -456,12 +454,67 @@ public class PlayerMovee : RigidBody
 	{	
 		public override Transition GetTransition()
 		{
+			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
 			return Transition.None();
 		}
 		public override void OnEnter()
 		{
-			if (Owner.movementStates.IsInState<Jump>()) { Owner.OnPlayerJumpApex(); }
+			if (Owner.groundedStates.IsInState<Jump>()) { Owner.OnPlayerJumpApex(); }
 			Owner.OnPlayerBeginFalling();
 		}
+	}
+
+	class Walk : StateWithOwner<PlayerMovee>
+	{
+		public override void OnEnter()
+		{
+			Owner.currentMaxGroundSpeed = Owner.maxWalkSpeed;
+		}
+
+		public override Transition GetTransition()
+		{
+			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
+
+			return Transition.None();
+		}
+	}
+
+	class CrouchIn : StateWithOwner<PlayerMovee>
+	{
+		//Timer timer = new Timer();
+		SceneTreeTimer timer;
+		float startHeight;
+		public override Transition GetTransition()
+		{
+			if (timer.TimeLeft <= 0) { return Transition.Sibling<Crouch>(); }
+			
+			return Transition.None();
+		}
+
+		public override void OnEnter()
+		{
+			//timer.Start(0.4f);
+			timer = Owner.GetTree().CreateTimer(0.4f);
+			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
+		}
+		float a = 0;
+		public override void Update(float aDeltaTime)
+		{
+			
+			float ass = Mathf.Lerp(startHeight, Owner.CrouchHeight, Utils.Normalize(0.0f, 0.4f, -(timer.TimeLeft - 0.4f)));
+			float deltaHeightChange = Mathf.Abs(((CylinderShape)Owner.collider.Shape).Height - ass);
+			((CylinderShape)Owner.collider.Shape).Height = ass;
+
+			Transform colliderTransform = Owner.GlobalTransform;
+			colliderTransform.origin.y -= deltaHeightChange/2;
+			Owner.GlobalTransform = colliderTransform;
+			
+			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
+		}
+	}
+
+	class Crouch : StateWithOwner<PlayerMovee>
+	{
+
 	}
 }

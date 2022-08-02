@@ -10,12 +10,11 @@ public class CameraController : Camera
 	[Export]
 	private float vertSens = 0.4f;
 	[Export]
-	private float standingEyeHeight = 64.0f;
-	[Export]
-	private float crouchedEyeHeight = 36.0f;
+	// How many hammer units between the top of the player collider, and the camera position. 
+	// In HL this distance is always 8.0 hammer units, regardless of crouching/standing.
+	private float eyeHeightDistanceFromTop = 8.0f;
 
-	public float StandingEyeHeight { get => standingEyeHeight; }
-	public float CrouchedEyeHeight { get => crouchedEyeHeight; }
+	public float EyeHeightDistanceFromTop { get => eyeHeightDistanceFromTop; }
 
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
@@ -23,8 +22,7 @@ public class CameraController : Camera
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
-		standingEyeHeight /= QODOT_INVERSE_SCALE;
-		crouchedEyeHeight /= QODOT_INVERSE_SCALE;
+		eyeHeightDistanceFromTop /= QODOT_INVERSE_SCALE;
 	}
 
 	public Vector3 GetForwardVector()

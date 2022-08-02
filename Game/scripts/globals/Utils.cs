@@ -86,4 +86,9 @@ public class Utils : Node
     {
         return vec.Normalized() * (vec.Length() * scale);
     }
+
+    public static float Normalize(float min, float max, float value)
+    {
+        return (value - min) / max - min;
+    }
 }
