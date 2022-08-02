@@ -54,6 +54,10 @@ public class PlayerMovee : RigidBody
 	// The height, in hammer units, of the player's collider while they are in the crouch state.
 	// Default: 36.0
 	private float CrouchHeight = 36.0f;
+	[Export]
+	private float CrouchTime = 0.4f;
+	[Export]
+	private float UncrouchTime = 0.2f;
 
 	// TODO: Expose to console.
 	bool drawDebug = true;
@@ -472,7 +476,7 @@ public class PlayerMovee : RigidBody
 
 		public override Transition GetTransition()
 		{
-			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
+			if (Input.IsActionJustPressed("Crouch")) { return Transition.Sibling<CrouchIn>(); }
 
 			return Transition.None();
 		}
@@ -480,38 +484,80 @@ public class PlayerMovee : RigidBody
 
 	class CrouchIn : StateWithOwner<PlayerMovee>
 	{
-		//Timer timer = new Timer();
 		SceneTreeTimer timer;
 		float startHeight;
+		bool firstFrame = true;
 		public override Transition GetTransition()
 		{
 			if (timer.TimeLeft <= 0) { return Transition.Sibling<Crouch>(); }
+			if (Input.IsActionJustPressed("Crouch") && !firstFrame)
+			{
+				return Transition.Sibling<CrouchOut>();
+			}
 			
 			return Transition.None();
 		}
 
 		public override void OnEnter()
 		{
-			//timer.Start(0.4f);
-			timer = Owner.GetTree().CreateTimer(0.4f);
+			timer = Owner.GetTree().CreateTimer(Owner.CrouchTime);
 			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
 		}
-		float a = 0;
+
 		public override void Update(float aDeltaTime)
 		{
-			
-			float ass = Mathf.Lerp(startHeight, Owner.CrouchHeight, Utils.Normalize(0.0f, 0.4f, -(timer.TimeLeft - 0.4f)));
+			float ass = Mathf.Lerp(startHeight, Owner.CrouchHeight, Utils.Normalize(0.0f, Owner.CrouchTime, -(timer.TimeLeft - Owner.CrouchTime)));
 			float deltaHeightChange = Mathf.Abs(((CylinderShape)Owner.collider.Shape).Height - ass);
 			((CylinderShape)Owner.collider.Shape).Height = ass;
 
 			// When grounded, "snap" the player to the ground so that they aren't repeatedly "Falling" each time
 			// we decrease the collider size.
-			if (Owner.groundedStates.IsInState<Air>())
+			if (Owner.groundedStates.IsInState<Ground>())
 			{
 				Owner.velocity.y -= deltaHeightChange / 2;
 			}
 			
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
+			firstFrame = false;
+		}
+	}
+
+	class CrouchOut : StateWithOwner<PlayerMovee>
+	{
+		SceneTreeTimer timer;
+		float startHeight;
+		bool firstFrame = true;
+
+		public override Transition GetTransition()
+		{
+			if (timer.TimeLeft <= 0) { return Transition.Sibling<Walk>(); }
+			if (Input.IsActionJustPressed("Crouch") && !firstFrame)
+			{
+				return Transition.Sibling<CrouchIn>();
+			}
+			return Transition.None();
+		}
+		public override void OnEnter()
+		{
+			timer = Owner.GetTree().CreateTimer(Owner.UncrouchTime);
+			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
+		}
+
+		public override void Update(float aDeltaTime)
+		{
+			float colliderAdjustAmt = Mathf.Lerp(startHeight, 2.25f, Utils.Normalize(0.0f, Owner.UncrouchTime, -(timer.TimeLeft - Owner.UncrouchTime)));
+			float deltaHeightChange = Mathf.Abs(((CylinderShape)Owner.collider.Shape).Height - colliderAdjustAmt);
+			((CylinderShape)Owner.collider.Shape).Height = colliderAdjustAmt;
+
+			// When grounded, "snap" the player to the ground so that they aren't repeatedly "Falling" each time
+			// we decrease the collider size.
+			if (Owner.groundedStates.IsInState<Ground>())
+			{
+				Owner.velocity.y -= deltaHeightChange / 2;
+			}
+
+			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
+			firstFrame = false;
 		}
 	}
 
