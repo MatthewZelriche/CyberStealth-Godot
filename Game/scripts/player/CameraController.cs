@@ -3,10 +3,19 @@ using System;
 
 public class CameraController : Camera
 {
+	const float QODOT_INVERSE_SCALE = 32.0f;
+
 	[Export]
 	private float horzSens = 0.4f;
 	[Export]
 	private float vertSens = 0.4f;
+	[Export]
+	private float standingEyeHeight = 64.0f;
+	[Export]
+	private float crouchedEyeHeight = 36.0f;
+
+	public float StandingEyeHeight { get => standingEyeHeight; }
+	public float CrouchedEyeHeight { get => crouchedEyeHeight; }
 
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
@@ -14,7 +23,8 @@ public class CameraController : Camera
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
-		SetAsToplevel(true);
+		standingEyeHeight /= QODOT_INVERSE_SCALE;
+		crouchedEyeHeight /= QODOT_INVERSE_SCALE;
 	}
 
 	public Vector3 GetForwardVector()
@@ -51,10 +61,10 @@ public class CameraController : Camera
 		}
 	}
 
-	public void SetWorldPosition(float x, float y, float z)
+	public void SetEyePos(float eyeHeight)
     {
-		var transform = GlobalTransform;
-		transform.origin = new Vector3(x, y, z);
-		GlobalTransform = transform;
+		var transform = Transform;
+		transform.origin = new Vector3(Transform.origin.x, eyeHeight, Transform.origin.z);
+		Transform = transform;
 	}
 }

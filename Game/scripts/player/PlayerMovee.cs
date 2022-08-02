@@ -79,6 +79,8 @@ public class PlayerMovee : RigidBody
 		Input.SetMouseMode(Input.MouseMode.Captured);
 
 		camRef = GetNode<CameraController>("Camera");
+		camRef.SetEyePos(camRef.StandingEyeHeight - ((CylinderShape)collider.Shape).Height/2);
+
 		colliderMargin = collider.Shape.Margin;
 		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
 
@@ -236,7 +238,6 @@ public class PlayerMovee : RigidBody
 		var space = GetWorld().DirectSpaceState;
 		Vector3 traceBeginPos = GlobalTransform.origin + velocity.Normalized() * ((CylinderShape)collider.Shape).Radius;
 		traceBeginPos = traceBeginPos + Vector3.Down * ((CylinderShape)collider.Shape).Height / 2;
-		DebugDraw.DrawCylinder(traceBeginPos, ((CylinderShape)collider.Shape).Radius, 2.0f);
 		Array throwaway = new Array();
 		Dictionary throwawayDictionary = new Dictionary();
 		Array excludeThis = new Array(this);
@@ -338,8 +339,6 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
-		// Update cam pos with player.
-		camRef.SetWorldPosition(this.GlobalTransform.origin.x, this.GlobalTransform.origin.y + 1.0f, this.GlobalTransform.origin.z);
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{
@@ -347,7 +346,7 @@ public class PlayerMovee : RigidBody
 		}
 		if (drawDebug)
 		{
-			Vector3 rayOrigin = camRef.Transform.origin;
+			Vector3 rayOrigin = camRef.GlobalTransform.origin;
 			rayOrigin.y -=  0.75f;
 			DebugDraw.DrawArrowRay3D(rayOrigin, wishDir.Normalized(), 1.25f, new Color(255, 0, 0));
 			DebugDraw.DrawArrowRay3D(rayOrigin, velocity.Normalized(), velocity.Length() / 5, new Color(0, 255, 0));

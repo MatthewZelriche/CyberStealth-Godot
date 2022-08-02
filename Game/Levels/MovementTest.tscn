@@ -288,4 +288,4 @@ shape = SubResource( 33 )
 shape = SubResource( 34 )
 
 [node name="Player" parent="." instance=ExtResource( 3 )]
-transform = Transform( -4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, -4, 2, 13 )
+transform = Transform( -4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, -3.33859, 2.94903, 13 )

@@ -8,6 +8,7 @@ friction = 0.0
 
 [sub_resource type="CylinderShape" id=2]
 radius = 0.5
+height = 2.25
 
 [sub_resource type="SpatialMaterial" id=3]
 albedo_color = Color( 1, 0, 0, 1 )
@@ -26,9 +27,8 @@ script = ExtResource( 1 )
 shape = SubResource( 2 )
 
 [node name="DebugVis" type="CSGCylinder" parent="."]
-visible = false
 radius = 0.5
-height = 2.0
+height = 2.25
 sides = 32
 
 [node name="ForwardHint" type="CSGBox" parent="."]
@@ -36,5 +36,5 @@ transform = Transform( 0.3, 0, 0, 0, 0.1, 0, 0, 0, 0.3, 0, 0.45, -0.421 )
 material = SubResource( 3 )
 
 [node name="Camera" type="Camera" parent="."]
-transform = Transform( 1, 0, 5.96047e-08, 0, 1, 0, -5.96047e-08, 0, 1, 0, 0.45, 0 )
+transform = Transform( 1, 0, 5.96047e-08, 0, 1, 0, -5.96047e-08, 0, 1, 0, 0, 0 )
 script = ExtResource( 2 )
