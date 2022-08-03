@@ -10,7 +10,6 @@ using Hsm;
 
 
 // TODO:
-// * Occasional bug where player receives too much vertical velocity from jumping. Possibly OnBeginJump() being called twice?
 // * Edge friction may not be working, possibly only in crouch state. Investigate.
 
 public class PlayerMovee : RigidBody
@@ -416,6 +415,10 @@ public class PlayerMovee : RigidBody
 	// Movement States
 	class Ground : StateWithOwner<PlayerMovee>
 	{
+		// When using autojump, there's a small change the player will still be grounded next frame,
+		// and IsActionPressed will return true, attempting to jump the player twice and doubling
+		// vertical velocity as a result. This is a simple hack to avoid that. 
+		bool stillAttemptingJump = false;
 		public override Transition GetTransition()
 		{
 			if (!Owner.TestGround(Owner.physBodyState))
@@ -429,8 +432,9 @@ public class PlayerMovee : RigidBody
 		public override void Update(float aDeltaTime)
 		{
 			bool didRequestJump = Owner.autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
-			if (didRequestJump)
+			if (didRequestJump && !stillAttemptingJump)
 			{
+				stillAttemptingJump=true;
 				Owner.OnBeginJump();
 			}
 		}
