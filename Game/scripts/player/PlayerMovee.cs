@@ -458,7 +458,6 @@ public class PlayerMovee : RigidBody
 		public override Transition GetTransition()
 		{ 	
 			if (Owner.velocity.y < 0) { return Transition.InnerEntry<Fall>(); }
-			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
 
 			return Transition.None();
 		}
@@ -528,7 +527,6 @@ public class PlayerMovee : RigidBody
 			{
 				Owner.velocity.y -= deltaHeightChange / 2;
 			}
-			
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
 			firstFrame = false;
 		}
@@ -568,7 +566,7 @@ public class PlayerMovee : RigidBody
 			// we decrease the collider size.
 			if (Owner.groundedStates.IsInState<Ground>())
 			{
-				Owner.velocity.y -= deltaHeightChange / 2;
+				Owner.velocity.y += deltaHeightChange / 2;
 			}
 
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
@@ -578,6 +576,11 @@ public class PlayerMovee : RigidBody
 
 	class Crouch : StateWithOwner<PlayerMovee>
 	{
+		public override Transition GetTransition()
+		{
+			if (Input.IsActionJustPressed("Crouch")) { return Transition.Sibling<CrouchOut>(false); }
 
+			return Transition.None();
+		}
 	}
 }
