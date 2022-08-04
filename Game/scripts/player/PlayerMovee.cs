@@ -150,12 +150,32 @@ public class PlayerMovee : RigidBody
 		return false;
 	}
 
+	protected bool CanUncrouch()
+	{
+		// Construct our collider shape to be narrower than we are, since we know the player 
+		// must already be fit inside the space they are in. 
+		// Construct the collider to also be shorter than the player. We then shift it's pos up so it
+		// does not errantly detect the floor.
+		CylinderShape traceShape = new CylinderShape();
+		traceShape.Radius = ((CylinderShape)collider.Shape).Radius - 0.05f;
+		traceShape.Height = ((CylinderShape)collider.Shape).Height - 0.2f;
+		Vector3 position = GlobalTransform.origin;
+		position.y += 0.2f/2f;
+		DebugDraw.DrawCylinder(position, traceShape.Radius, traceShape.Height);
+
+		Dictionary resultsdiscard = new Dictionary();
+		return !Utils.TestIntersection(GetWorld().DirectSpaceState, traceShape, position, ref resultsdiscard, new Array(this));
+	}
+
 	public override void _IntegrateForces(PhysicsDirectBodyState state)
 	{
 		movementStates.ProcessStateTransitions();
 		groundedStates.ProcessStateTransitions();
 		movementStates.UpdateStates(state.Step);
 		groundedStates.UpdateStates(state.Step);
+		CanUncrouch();
+		if (drawDebug && Input.IsKeyPressed((int)KeyList.Capslock)) { DebugDraw.Freeze3DRender = true; }
+		DebugDraw.DrawCylinder(GlobalTransform.origin, ((CylinderShape)collider.Shape).Radius, ((CylinderShape)collider.Shape).Height, new Color(0, 0, 0));
 
 		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
@@ -571,7 +591,7 @@ public class PlayerMovee : RigidBody
 		public override Transition GetTransition()
 		{
 			if (timer.TimeLeft <= 0) { return Transition.Sibling<Crouch>(); }
-			if (Input.IsActionJustPressed("Crouch") && !firstFrame)
+			if (Input.IsActionJustPressed("Crouch") && !firstFrame && Owner.CanUncrouch())
 			{
 				return Transition.Sibling<CrouchOut>(false);
 			}
@@ -664,7 +684,7 @@ public class PlayerMovee : RigidBody
 	{
 		public override Transition GetTransition()
 		{
-			if (Input.IsActionJustPressed("Crouch")) { return Transition.Sibling<CrouchOut>(false); }
+			if (Input.IsActionJustPressed("Crouch") && Owner.CanUncrouch()) { return Transition.Sibling<CrouchOut>(false); }
 
 			return Transition.None();
 		}
