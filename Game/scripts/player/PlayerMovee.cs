@@ -114,6 +114,11 @@ public class PlayerMovee : RigidBody
 		jumpForce /= QODOT_INVERSE_SCALE;
 		maxStepHeight /= QODOT_INVERSE_SCALE;
 		CrouchHeight /= QODOT_INVERSE_SCALE;
+
+		// My current understanding of how this works - Both the floor and the ceiling contribute a margin
+		// of 0.02f, while the player capsule contributes a margin of 0.04f. So we subtract this from
+		// our crouch height to allow the collider to move under 36 unit tall spaces.
+		CrouchHeight -= 0.08f;
 	}
 
 	/**
@@ -579,6 +584,15 @@ public class PlayerMovee : RigidBody
 			timer = Owner.GetTree().CreateTimer(Owner.CrouchTime);
 			startHeight = ((CylinderShape)Owner.collider.Shape).Height;
 			Owner.currentMaxGroundSpeed = Owner.maxCrouchSpeed;
+		}
+
+		public override void OnExit()
+		{
+			((CylinderShape)Owner.collider.Shape).Height = Owner.CrouchHeight;
+			Transform bab = Owner.physBodyState.Transform;
+			bab.origin = new Vector3(bab.origin.x, Owner.floorY + Owner.CrouchHeight/2, bab.origin.z);
+			Owner.physBodyState.Transform = bab;
+			GD.Print(Owner.physBodyState.Transform.origin);
 		}
 
 		public override void Update(float aDeltaTime)
