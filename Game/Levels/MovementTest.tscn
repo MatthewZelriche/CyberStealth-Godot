@@ -179,6 +179,7 @@ points = PoolVector3Array( 13.5, 7.5, 21.5, 10, 0.5, 21.5, 13.5, 0.5, 21.5, 13.5
 [node name="Root" type="Spatial"]
 
 [node name="QodotMap" type="Spatial" parent="."]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.41, 0 )
 script = ExtResource( 4 )
 map_file = "Z:/Programming/CyberStealth-godot/Game/trenchbroom_data/maps/ArenaTest.map"
 inverse_scale_factor = 32.0
@@ -288,4 +289,4 @@ shape = SubResource( 33 )
 shape = SubResource( 34 )
 
 [node name="Player" parent="." instance=ExtResource( 3 )]
-transform = Transform( -4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, -2.55337, 2.37989, 13 )
+transform = Transform( -0.992176, 0, 0.124848, 0, 1, 0, -0.124848, 0, -0.992176, -2.55337, 2.37989, 13 )

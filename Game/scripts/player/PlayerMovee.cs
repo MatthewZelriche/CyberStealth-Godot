@@ -2,15 +2,6 @@ using Godot;
 using Godot.Collections;
 using Hsm;
 
-// Possible crouch values:
-// maxSpeed = 50;
-// maxAccel = 8.0f;
-// stopSpeed = 55;
-// edgeFrictionMult = 1.0
-
-
-// TODO:
-// * Edge friction may not be working, possibly only in crouch state. Investigate.
 
 public class PlayerMovee : RigidBody
 {
@@ -19,7 +10,11 @@ public class PlayerMovee : RigidBody
 	[Export]
 	// The top speed, in units, that a player may initiate without movement tricks (bhopping, etc)
 	// See: sv_maxspeed. Default: 320 hammer units
-	private float maxWalkSpeed = 320.0f;
+	private float maxSpeed = 320.0f;
+	[Export]
+	// The speed at which the player attempts to move while walking.
+	// See: Similar to cl_forwardspeed. Default: 400 hammer units
+	private float maxWalkSpeed = 400.0f;
 	// The top speed, in hammer units, that a player may initiate while crouched.
 	// See: https://www.jwchong.com/hl/duckjump.html May not be entirely accurate because HL1 uses cl_Forwardspeed
 	// in this calculation, which I do not. But the rationale is 400 * 0.333 = 133.2.
@@ -76,7 +71,8 @@ public class PlayerMovee : RigidBody
 	private Vector3 velocity;
 	private Vector3 wishDir;
 	private CameraController camRef;
-	private float currentEdgeFriction = 0.0f;
+	private float currentEdgeFriction = 1.0f;
+	private float floorY = 0.0f;
 
 	private float colliderMargin;
 
@@ -105,6 +101,7 @@ public class PlayerMovee : RigidBody
 		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
 
 
+		maxSpeed /= QODOT_INVERSE_SCALE;
 		maxWalkSpeed /= QODOT_INVERSE_SCALE;
 		maxCrouchSpeed /= QODOT_INVERSE_SCALE;
 		maxAirSpeed /= QODOT_INVERSE_SCALE;
@@ -113,7 +110,6 @@ public class PlayerMovee : RigidBody
 		jumpForce /= QODOT_INVERSE_SCALE;
 		maxStepHeight /= QODOT_INVERSE_SCALE;
 		CrouchHeight /= QODOT_INVERSE_SCALE;
-		maxAccel *= maxWalkSpeed;
 	}
 
 	internal bool TestGround(PhysicsDirectBodyState state)
@@ -124,10 +120,11 @@ public class PlayerMovee : RigidBody
 		for (int i = 0; i < state.GetContactCount(); i++)
 		{
 			Vector3 surfNormal = state.GetContactLocalNormal(i);
-
+			
 			float angle = Mathf.Rad2Deg(Mathf.Acos(surfNormal.Dot(Vector3.Up) / surfNormal.Length()));
-			if (angle < maxWalkAngle) { return true; }
+			if (angle < maxWalkAngle) { floorY = state.GetContactColliderPosition(i).y; return true; }
 		}
+		floorY = Mathf.NaN;
 		return false;
 	}
 
@@ -135,6 +132,8 @@ public class PlayerMovee : RigidBody
 	{
 		movementStates.ProcessStateTransitions();
 		groundedStates.ProcessStateTransitions();
+		movementStates.UpdateStates(state.Step);
+		groundedStates.UpdateStates(state.Step);
 
 		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
@@ -188,6 +187,9 @@ public class PlayerMovee : RigidBody
 				Dictionary hitResult = new Dictionary();
 				Utils.TestIntersection(space, traceShape, finalPos, ref hitResult, ignoreThis);
 				if (hitResult.Count == 0) { return 0; }
+				// Don't attempt a teleport if we are detecting the same floor we are already standing on.
+				float hitY = ((Vector3)hitResult["point"]).y;
+				if (Mathf.Abs(hitY - floorY) < (0.1 / QODOT_INVERSE_SCALE)) return 0;
 				Vector3 resNormal = (Vector3)hitResult["normal"];
 				float angle = GetVec3Angle(resNormal, Vector3.Up);
 				if (angle <= maxWalkAngle)
@@ -228,7 +230,6 @@ public class PlayerMovee : RigidBody
 	void CalcWishDir()
 	{
 		wishDir = new Vector3();
-		// Ignore Y dir of basis vectors so that camera pitch doesn't cause player to move up or down by looking.
 		Vector3 forward2D = GetVec2D(camRef.GetForwardVector());
 		Vector3 right2D = GetVec2D(camRef.GetRightVector());
 
@@ -257,7 +258,8 @@ public class PlayerMovee : RigidBody
 		if (groundedStates.IsInState<Air>()) return false;
 		
 		var space = GetWorld().DirectSpaceState;
-		Vector3 traceBeginPos = GlobalTransform.origin + velocity.Normalized() * ((CylinderShape)collider.Shape).Radius;
+		// Source for 16 hammer units: https://www.jwchong.com/hl/movement.html#edgefriction
+		Vector3 traceBeginPos = GlobalTransform.origin + GetVec2D(velocity).Normalized() * 16.0f / QODOT_INVERSE_SCALE;
 		traceBeginPos = traceBeginPos + Vector3.Down * ((CylinderShape)collider.Shape).Height / 2;
 		Array throwaway = new Array();
 		Dictionary throwawayDictionary = new Dictionary();
@@ -272,13 +274,6 @@ public class PlayerMovee : RigidBody
 		// Ensure there exists a single frame after landing where we do not apply friction.
 		if (noFrictionThisFrame) {  noFrictionThisFrame = false; return; }
 		float lastSpeed = GetVec2D(velocity).Length();
-		// Zero out small float values to ensure we come to a complete stop.
-		if (lastSpeed <= 0.03f)
-		{
-			velocity.x = 0;
-			velocity.z = 0;
-			return;
-		}
 		if (lastSpeed != 0)
 		{
 			// stopspeed only scales decel at low speeds.
@@ -330,25 +325,34 @@ public class PlayerMovee : RigidBody
 
 	bool CalcNewVel(PhysicsDirectBodyState state)
 	{
+		// Scale wishDir by our requested movement speed (cl_forwardspeed)
+		Vector3 accel = wishDir.Normalized() * currentMaxGroundSpeed;
+		// Clamp to the maxspeed to prevent input directly contributing to speeds greater than maxspeed.
+		accel = accel.Normalized() * Mathf.Clamp(accel.Length(), 0, maxSpeed);
+
+		// Apply friction if necessary.
 		if (ShouldApplyEdgeFriction(state.Step)) { currentEdgeFriction = edgeFrictionMult; } else { currentEdgeFriction = 1.0f; }
 		if (groundedStates.IsInState<Ground>()) ApplyFriction(state.Step);
 
-		// Clamp velocity based on dot product of wishdir and current velocity, because that's how quake did it
-		// for some reason. See: https://www.youtube.com/watch?v=v3zT3Z5apaM
-		float curSpeed = velocity.Dot(wishDir);
+		// www.adrianb.io/2015/02/14/bunnyhop.html
+		float projVel = velocity.Dot(accel.Normalized());
+		// Clamp our requested movement speed in the air to account for the lack of friction. 
+		float clampedSpeed = groundedStates.IsInState<Ground>() ? accel.Length() : (accel.Normalized() * Mathf.Clamp(accel.Length(), 0, maxAirSpeed)).Length();
+		float additionalVel = clampedSpeed - projVel;
 
-		// Cap air speed to prevent dramatic movements in the air as a result of no frictional force.
-		float maxSpeed = groundedStates.IsInState<Ground>() ? currentMaxGroundSpeed : maxAirSpeed;
-		float addSpeed = Mathf.Clamp(maxSpeed - curSpeed, 0, maxAccel * state.Step);
-
-		// Increase our vel based on addSpeed in the wishdir.
-		Vector3 predictedNextVel = velocity + addSpeed * wishDir;
+		// Don't add velocity if velocity has ended up negative, or it will slow us down, which is exclusively the job of friction.
+		if (additionalVel >= 0)
+		{
+			// www.projectborealis.com/movement.html
+			accel *= maxAccel * state.Step;
+			accel = accel.Normalized() * Mathf.Clamp(accel.Length(), 0, additionalVel);
+			velocity += accel;
+		}
 
 		// Test for wall collisions that would change our velocity.
-		CalcWallVelSlide(ref predictedNextVel, state);
+		CalcWallVelSlide(ref velocity, state);
 		// Check for slopes. Modulate velocity by the amount we had to teleport, if any.
-		float amtMoved = AttemptStep(predictedNextVel, state);
-		velocity = predictedNextVel.Normalized() * (predictedNextVel.Length());
+		float amtMoved = AttemptStep(velocity, state);
 
 		// Apply gravity after we've determined our horz trajectory.
 		if (groundedStates.IsInState<Air>()) ApplyGravity(state.Step);
@@ -359,8 +363,6 @@ public class PlayerMovee : RigidBody
 
 	public override void _Process(float delta)
 	{
-		movementStates.UpdateStates(delta);
-		groundedStates.UpdateStates(delta);
 
 		if (Input.IsKeyPressed((int)KeyList.Capslock))
 		{
@@ -371,7 +373,7 @@ public class PlayerMovee : RigidBody
 			Vector3 rayOrigin = camRef.GlobalTransform.origin;
 			rayOrigin.y -=  0.75f;
 			DebugDraw.DrawArrowRay3D(rayOrigin, wishDir.Normalized(), 1.25f, new Color(255, 0, 0));
-			DebugDraw.DrawArrowRay3D(rayOrigin, velocity.Normalized(), velocity.Length() / 5, new Color(0, 255, 0));
+			DebugDraw.DrawArrowRay3D(rayOrigin, GetVec2D(velocity).Normalized(), GetVec2D(velocity).Length() / 5, new Color(0, 255, 0));
 
 			DebugDraw.TextBackgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.1f);
 			DebugDraw.TextForegroundColor = new Color(0.0f, 0.0f, 0.0f, 1.0f);
@@ -471,7 +473,6 @@ public class PlayerMovee : RigidBody
 	{	
 		public override Transition GetTransition()
 		{
-			if (Input.IsActionJustPressed("Crouch")) { return Transition.InnerEntry<CrouchIn>(); }
 			return Transition.None();
 		}
 		public override void OnEnter()
@@ -529,7 +530,9 @@ public class PlayerMovee : RigidBody
 			// we decrease the collider size.
 			if (Owner.groundedStates.IsInState<Ground>())
 			{
-				Owner.velocity.y -= deltaHeightChange / 2;
+				Transform bab = Owner.physBodyState.Transform;
+				bab.origin = new Vector3(bab.origin.x, bab.origin.y - (deltaHeightChange / 2), bab.origin.z);
+				Owner.physBodyState.Transform = bab;
 			}
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
 			firstFrame = false;
@@ -570,7 +573,9 @@ public class PlayerMovee : RigidBody
 			// we decrease the collider size.
 			if (Owner.groundedStates.IsInState<Ground>())
 			{
-				Owner.velocity.y += deltaHeightChange / 2;
+				Transform bab = Owner.physBodyState.Transform;
+				bab.origin = new Vector3(bab.origin.x, bab.origin.y + (deltaHeightChange / 2), bab.origin.z);
+				Owner.physBodyState.Transform = bab;
 			}
 
 			Owner.camRef.SetEyePos(0 - ((CylinderShape)Owner.collider.Shape).Height / 2 + ((CylinderShape)Owner.collider.Shape).Height - Owner.camRef.EyeHeightDistanceFromTop);
