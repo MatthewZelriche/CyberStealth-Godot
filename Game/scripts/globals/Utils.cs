@@ -75,10 +75,13 @@ public class Utils : Node
         results.hitResults = TestMultiIntersection(space, collider, startPos + (move.Normalized() * move.Length() * (float)motionResults[0]), ignoreList);
         return results;
     }
+    public static Vector3 GetVec2D(Vector3 inVec)
+    {
+        return new Vector3(inVec.x, 0, inVec.z);
+    }
 
     public static float GetVec3Angle(Vector3 first, Vector3 second)
     {
-        // TODO: Is this right?
         return 90 - Mathf.Rad2Deg(first.Dot(second) / (first.Length() * second.Length()));
     }
 
