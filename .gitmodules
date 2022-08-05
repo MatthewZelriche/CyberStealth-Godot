@@ -1,0 +1,12 @@
+[submodule "EngineSrc-Godot"]
+	path = EngineSrc-Godot
+	url = https://github.com/MatthewZelriche/godot.git
+[submodule "Addons/qodot-plugin"]
+	path = Addons/qodot-plugin
+	url = https://github.com/MatthewZelriche/qodot-plugin
+[submodule "EngineModules/qodot"]
+	path = EngineModules/qodot
+	url = https://github.com/MatthewZelriche/qodot.git
+[submodule "EngineModules/tabletop_club_godot_module"]
+	path = EngineModules/tabletop_club_godot_module
+	url = https://github.com/MatthewZelriche/tabletop_club_godot_module.git
