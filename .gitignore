@@ -9,3 +9,5 @@ data_*/
 Game/.github
 Game/.vs
 Game/Backup
+.vs/*
+.vscode/*
