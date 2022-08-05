@@ -96,7 +96,7 @@ public class PlayerMovee : RigidBody
 
 		collider = GetNode<CollisionShape>("CollisionShape");
 		GetNode<Spatial>("ForwardHint").Visible = false;
-		Input.SetMouseMode(Input.MouseMode.Captured);
+		Input.MouseMode = Input.MouseModeEnum.Captured;
 
 		camRef = GetNode<CameraController>("Camera");
 		camRef.SetEyePos(0 - ((CylinderShape)collider.Shape).Height / 2 + ((CylinderShape)collider.Shape).Height - camRef.EyeHeightDistanceFromTop);
