@@ -11,3 +11,6 @@ Game/.vs
 Game/Backup
 .vs/*
 .vscode/*
+
+Game/addons/qodot/*
+Game/addons/quentincaffeino/*

@@ -217,7 +217,7 @@ DebugDraw="*res://addons/debug_draw_cs/DebugDraw.cs"
 
 [editor_plugins]
 
-enabled=PoolStringArray( "res://addons/qodot/plugin.cfg" )
+enabled=PoolStringArray( "res://addons/debug_draw_cs/plugin.cfg", "res://addons/qodot/plugin.cfg" )
 
 [importer_defaults]
 
