@@ -68,9 +68,8 @@ public class PlayerMovee : RigidBody
 	// Default: ?? Much quicker than the 0.4 crouch transition, however.
 	protected float UncrouchTime = 0.1f;
 
-	// TODO: Expose to console.
-	protected bool drawDebug = true;
-	protected bool autojump = true;
+	public bool drawDebug = false;
+	public bool autojump = false;
 
 	private Vector3 velocity;
 	private Vector3 wishDir;
