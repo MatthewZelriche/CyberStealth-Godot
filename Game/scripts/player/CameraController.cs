@@ -18,12 +18,21 @@ public class CameraController : Camera
 
 	private float pitch = 0.0f;
 	private float yaw = 0.0f;
+	private bool disableInput = false;
 
 	// Called when the node enters the scene tree for the first time.
 	public override void _Ready()
 	{
 		eyeHeightDistanceFromTop /= QODOT_INVERSE_SCALE;
+		Input.MouseMode = Input.MouseModeEnum.Captured;
+		GetTree().Root.GetNode("Console").Connect("toggled", this, nameof(OnDevConsoleToggled));
 	}
+
+	public void OnDevConsoleToggled(bool shown)
+    {
+		disableInput = shown;
+		Input.MouseMode = shown ? Input.MouseModeEnum.Confined : Input.MouseModeEnum.Captured;
+    }
 
 	public Vector3 GetForwardVector()
     {
@@ -37,6 +46,7 @@ public class CameraController : Camera
 
 	public override void _Input(InputEvent @event)
 	{
+		if (disableInput) { return; }
 		if (@event is InputEventMouseMotion motionEvent)
 		{
 			pitch -= motionEvent.Relative.y * horzSens;

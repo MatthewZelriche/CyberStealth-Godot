@@ -86,6 +86,7 @@ public class PlayerMovee : RigidBody
 	private PhysicsDirectBodyState physBodyState;
 	private StateMachine movementStates;
 	private StateMachine groundedStates;
+	private bool DisableInput = false;
 	
 	public override void _Ready()
 	{
@@ -96,10 +97,11 @@ public class PlayerMovee : RigidBody
 
 		collider = GetNode<CollisionShape>("CollisionShape");
 		GetNode<Spatial>("ForwardHint").Visible = false;
-		Input.MouseMode = Input.MouseModeEnum.Captured;
 
 		camRef = GetNode<CameraController>("Camera");
 		camRef.SetEyePos(0 - ((CylinderShape)collider.Shape).Height / 2 + ((CylinderShape)collider.Shape).Height - camRef.EyeHeightDistanceFromTop);
+
+		GetTree().Root.GetNode("Console").Connect("toggled", this, nameof(OnDevConsoleToggled));
 
 		colliderMargin = collider.Shape.Margin;
 		physBodyState = PhysicsServer.BodyGetDirectState(GetRid());
@@ -161,7 +163,6 @@ public class PlayerMovee : RigidBody
 		traceShape.Height = ((CylinderShape)collider.Shape).Height - 0.2f;
 		Vector3 position = GlobalTransform.origin;
 		position.y += 0.2f/2f;
-		DebugDraw.DrawCylinder(position, traceShape.Radius, traceShape.Height);
 
 		Dictionary resultsdiscard = new Dictionary();
 		return !Utils.TestIntersection(GetWorld().DirectSpaceState, traceShape, position, ref resultsdiscard, new Array(this));
@@ -174,8 +175,6 @@ public class PlayerMovee : RigidBody
 		movementStates.UpdateStates(state.Step);
 		groundedStates.UpdateStates(state.Step);
 		CanUncrouch();
-		if (drawDebug && Input.IsKeyPressed((int)KeyList.Capslock)) { DebugDraw.Freeze3DRender = true; }
-		DebugDraw.DrawCylinder(GlobalTransform.origin, ((CylinderShape)collider.Shape).Radius, ((CylinderShape)collider.Shape).Height, new Color(0, 0, 0));
 
 		// See: AttemptStep. This is for helping prevent weird RigidBody movement on steep slopes.
 		AxisLockLinearY = false;
@@ -290,19 +289,19 @@ public class PlayerMovee : RigidBody
 		Vector3 forward2D = Utils.GetVec2D(camRef.GetForwardVector());
 		Vector3 right2D = Utils.GetVec2D(camRef.GetRightVector());
 
-		if (Input.IsActionPressed("move_forward"))
+		if (GetActionPressed("move_forward"))
 		{
 			wishDir -= forward2D;
 		}
-		if (Input.IsActionPressed("move_back"))
+		if (GetActionPressed("move_back"))
 		{
 			wishDir += forward2D;
 		}
-		if (Input.IsActionPressed("strafe_left"))
+		if (GetActionPressed("strafe_left"))
 		{
 			wishDir -= right2D;
 		}
-		if (Input.IsActionPressed("strafe_right"))
+		if (GetActionPressed("strafe_right"))
 		{
 			wishDir += right2D;
 		}
@@ -471,6 +470,11 @@ public class PlayerMovee : RigidBody
 		}
 	}
 
+	public void OnDevConsoleToggled(bool shown)
+	{
+		DisableInput = shown;
+	}
+
 	/** Called as soon as the player transitions from the Air state to the Ground state. */
 	protected virtual void OnPlayerLanded()
 	{
@@ -499,6 +503,18 @@ public class PlayerMovee : RigidBody
 	{
 	}
 
+	// Wrapper for disabling input.
+	private bool GetActionPressed(string action)
+	{
+		if (DisableInput) { return false; }
+		return Input.IsActionPressed(action);
+	}
+	private bool GetActionJustPressed(string action)
+	{
+		if (DisableInput) { return false; }
+		return Input.IsActionJustPressed(action);
+	}
+
 	/* Movement states for the state machines */
 	class Ground : StateWithOwner<PlayerMovee>
 	{
@@ -519,7 +535,7 @@ public class PlayerMovee : RigidBody
 		public override void Update(float aDeltaTime)
 		{
 			// Check every frame while we are on the ground if the player is initiating a jump.
-			bool didRequestJump = Owner.autojump ? Input.IsActionPressed("Jump") : Input.IsActionJustPressed("Jump");
+			bool didRequestJump = Owner.autojump ? Owner.GetActionPressed("Jump") : Owner.GetActionJustPressed("Jump");
 			if (didRequestJump && !stillAttemptingJump)
 			{
 				stillAttemptingJump=true;
@@ -577,7 +593,7 @@ public class PlayerMovee : RigidBody
 
 		public override Transition GetTransition()
 		{
-			if (Input.IsActionJustPressed("Crouch")) { return Transition.Sibling<CrouchIn>(); }
+			if (Owner.GetActionJustPressed("Crouch")) { return Transition.Sibling<CrouchIn>(); }
 
 			return Transition.None();
 		}
@@ -591,7 +607,7 @@ public class PlayerMovee : RigidBody
 		public override Transition GetTransition()
 		{
 			if (timer.TimeLeft <= 0) { return Transition.Sibling<Crouch>(); }
-			if (Input.IsActionJustPressed("Crouch") && !firstFrame && Owner.CanUncrouch())
+			if (Owner.GetActionJustPressed("Crouch") && !firstFrame && Owner.CanUncrouch())
 			{
 				return Transition.Sibling<CrouchOut>(false);
 			}
@@ -644,7 +660,7 @@ public class PlayerMovee : RigidBody
 		public override Transition GetTransition()
 		{
 			if (timer.TimeLeft <= 0) { return Transition.Sibling<Walk>(); }
-			if (Input.IsActionJustPressed("Crouch") && !firstFrame)
+			if (Owner.GetActionJustPressed("Crouch") && !firstFrame)
 			{
 				return Transition.Sibling<CrouchIn>();
 			}
@@ -684,7 +700,7 @@ public class PlayerMovee : RigidBody
 	{
 		public override Transition GetTransition()
 		{
-			if (Input.IsActionJustPressed("Crouch") && Owner.CanUncrouch()) { return Transition.Sibling<CrouchOut>(false); }
+			if (Owner.GetActionJustPressed("Crouch") && Owner.CanUncrouch()) { return Transition.Sibling<CrouchOut>(false); }
 
 			return Transition.None();
 		}
