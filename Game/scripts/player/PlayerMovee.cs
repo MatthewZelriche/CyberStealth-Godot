@@ -2,6 +2,9 @@ using Godot;
 using Godot.Collections;
 using Hsm;
 
+// Known bugs:
+// * Very slow speeds (>100ups) have issues with climbing stairs.
+
 public class PlayerMovee : RigidBody
 {
 	const float QODOT_INVERSE_SCALE = 32.0f;
@@ -86,7 +89,8 @@ public class PlayerMovee : RigidBody
 	private StateMachine movementStates;
 	private StateMachine groundedStates;
 	private bool DisableInput = false;
-	
+	Vector3 floorNormal;
+
 	public override void _Ready()
 	{
 		movementStates = new StateMachine();
@@ -143,11 +147,13 @@ public class PlayerMovee : RigidBody
 			float angle = Mathf.Rad2Deg(Mathf.Acos(surfNormal.Dot(Vector3.Up) / surfNormal.Length()));
 			if (angle < maxWalkAngle) 
 			{ 
-				floorY = physBodyState.GetContactColliderPosition(i).y; 
+				floorY = physBodyState.GetContactColliderPosition(i).y;
+				floorNormal = surfNormal;
 				return true; 
 			}
 		}
 		floorY = Mathf.NaN;
+		floorNormal = Vector3.Inf;
 		return false;
 	}
 
@@ -210,6 +216,11 @@ public class PlayerMovee : RigidBody
 		traceShape.Height = ((CylinderShape)collider.Shape).Height;
 		Array results = new Array();
 
+		if (!floorNormal.IsEqualApprox(Vector3.Inf))
+		{
+			moveDelta = moveDelta.Normalized() * moveDelta.Slide(floorNormal).Length();
+		}
+
 		// Cast our collider upward, to see what our ceiling clearance is.
 		Utils.TestMotion(space, traceShape, collider.GlobalTransform.origin, Vector3.Up * maxStepHeight, ref results, ignoreThis);
 		Vector3 maxUpPos = collider.GlobalTransform.origin + Utils.ScaleVector(Vector3.Up * maxStepHeight, (float)results[0]);
@@ -219,7 +230,7 @@ public class PlayerMovee : RigidBody
 
 		// Cast forward by the delta velocity this frame.
 		// Account for margin, otherwise we can't step up at slow speeds.
-		Vector3 forwardMotion = (moveDelta * physBodyState.Step).Normalized() * ((moveDelta * physBodyState.Step).Length() + colliderMargin);
+		Vector3 forwardMotion = (moveDelta * physBodyState.Step).Normalized() * ((moveDelta * physBodyState.Step).Length());
 		Utils.TestMotion(space, traceShape, maxUpPos, forwardMotion, ref results, ignoreThis);
 		Vector3 maxForwardPos = maxUpPos + Utils.ScaleVector(forwardMotion, (float)results[0]);
 		results.Clear();

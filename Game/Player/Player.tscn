@@ -7,8 +7,8 @@
 friction = 0.0
 
 [sub_resource type="CylinderShape" id=2]
-radius = 0.5
 height = 2.25
+radius = 0.5
 
 [sub_resource type="SpatialMaterial" id=3]
 albedo_color = Color( 1, 0, 0, 1 )
